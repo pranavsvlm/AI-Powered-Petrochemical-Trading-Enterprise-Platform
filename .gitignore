@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+.turbo/
+
+# Env files (never commit real secrets)
+.env
+.env.*
+!.env.example
+!.env.development.example
+!.env.production.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Testing
+coverage/
+
+# Editor
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Electron
+apps/desktop/out/
+apps/desktop/release/
+
+# Prisma
+packages/database/prisma/dev.db
+
+# Misc
+*.tsbuildinfo

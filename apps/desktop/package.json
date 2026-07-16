@@ -1,0 +1,27 @@
+{
+  "name": "@platform/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "electron/main.ts",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src electron --max-warnings=0",
+    "test": "echo \"no tests yet\" && exit 0"
+  },
+  "dependencies": {
+    "@platform/core": "workspace:*",
+    "@platform/ui": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.2",
+    "electron": "^32.1.2",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.8"
+  }
+}

@@ -1,0 +1,11 @@
+// Prisma schema — centralized for the whole platform (apps/backend depends on this package).
+// Domain models defined per Phase 1 of the roadmap — intentionally empty in the skeleton.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}

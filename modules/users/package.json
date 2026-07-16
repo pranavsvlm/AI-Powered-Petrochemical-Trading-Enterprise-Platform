@@ -1,0 +1,17 @@
+{
+  "name": "@modules/users",
+  "version": "0.1.0",
+  "private": true,
+  "description": "User accounts, roles, and identity management module.",
+  "main": "api/index.ts",
+  "scripts": {
+    "build": "echo \"no build target yet\" && exit 0",
+    "typecheck": "echo \"no source yet\" && exit 0",
+    "lint": "echo \"no source yet\" && exit 0",
+    "test": "echo \"no tests yet\" && exit 0"
+  },
+  "dependencies": {
+    "@platform/core": "workspace:*",
+    "@platform/types": "workspace:*"
+  }
+}

@@ -1,0 +1,4 @@
+// Shared design system entry point — intentionally minimal in the skeleton.
+export const PACKAGE_NAME = '@platform/ui';
+export { Button } from './Button';
+export type { ButtonProps } from './Button';
