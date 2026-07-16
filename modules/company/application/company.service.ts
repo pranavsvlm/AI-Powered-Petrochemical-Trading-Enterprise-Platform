@@ -121,7 +121,7 @@ export class CompanyService {
     await this.getById(companyId);
     return TenantContextStore.run(
       { companyId, userId: null, sessionId: null, ipAddress: null, isPlatformActor: false },
-      () => this.repo.listFeatures(companyId),
+      async () => await this.repo.listFeatures(companyId),
     );
   }
 
@@ -135,7 +135,7 @@ export class CompanyService {
     await this.getById(companyId);
     const feature = await TenantContextStore.run(
       { companyId, userId: null, sessionId: null, ipAddress: ip, isPlatformActor: false },
-      () => this.repo.setFeature(companyId, moduleName, enabled),
+      async () => await this.repo.setFeature(companyId, moduleName, enabled),
     );
     await this.audit.record({
       companyId,

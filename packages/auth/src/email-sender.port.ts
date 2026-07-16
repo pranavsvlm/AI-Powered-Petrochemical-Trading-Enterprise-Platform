@@ -1,16 +1,7 @@
 /**
- * Minimal notification port so Phase 1 auth flows (email-OTP, password reset, email
- * verification) can send email without depending on the (later-phase) notifications package.
- * A real adapter (SMTP/SES/etc.) can implement this interface without touching auth code.
+ * Phase 2: this port is promoted to live in @platform/notifications (the long-term owner —
+ * see docs/DOMAIN_MODEL_PHASE2.md §2). Re-exported here so existing Phase 1 auth
+ * call sites (`import { EmailSenderPort } from '@platform/auth'`) keep working unmodified.
  */
-export interface EmailMessage {
-  to: string;
-  subject: string;
-  body: string;
-}
-
-export const EMAIL_SENDER_PORT = Symbol('EMAIL_SENDER_PORT');
-
-export interface EmailSenderPort {
-  send(message: EmailMessage): Promise<void>;
-}
+export { EMAIL_SENDER_PORT } from '@platform/notifications';
+export type { EmailSenderPort, EmailMessage } from '@platform/notifications';

@@ -90,10 +90,25 @@ export function tenantExtension() {
  * Escape hatch for genuinely platform-level (cross-tenant) operations, e.g. Platform Super
  * Admin listing all companies' admins. Requires an explicit, auditable opt-in call site —
  * there is no ambient way to disable tenant scoping.
+ *
+ * IMPORTANT: `fn` is awaited *inside* the AsyncLocalStorage-bound callback, not merely
+ * invoked and returned. `TenantContextStore.run()`/Node's AsyncLocalStorage.run() only keeps
+ * a context "active" for the synchronous portion of the callback plus any continuation that
+ * is chained (via `await`/`.then()`) from *within* that same callback invocation. Prisma's
+ * client methods return a lazy "PrismaPromise" whose `.then()` (and therefore the tenant
+ * extension's `$allOperations` hook) only fires when something actually calls `.then()` on
+ * it. If `fn` is a plain arrow that just *returns* `somePrismaCall(...)` without an internal
+ * `await`, `run()` calls `fn()`, gets back that still-pending, not-yet-`.then()`-ed promise,
+ * and returns immediately — the ALS context is popped before the caller's own `await
+ * withoutTenantScope(...)` ever triggers Prisma's actual query dispatch, so the extension
+ * sees an *unbound* context and fails closed with "no tenant context bound" even though the
+ * call site looks correct. Wrapping with `async () => await fn()` forces `.then()` to be
+ * invoked synchronously, inside this function's own async execution, which IS properly
+ * tracked by AsyncLocalStorage across further awaits.
  */
-export function withoutTenantScope<T>(fn: () => T): T {
+export function withoutTenantScope<T>(fn: () => T): Promise<T> {
   return TenantContextStore.run(
     { companyId: null, userId: null, sessionId: null, ipAddress: null, isPlatformActor: true },
-    fn,
+    async () => await fn(),
   );
 }

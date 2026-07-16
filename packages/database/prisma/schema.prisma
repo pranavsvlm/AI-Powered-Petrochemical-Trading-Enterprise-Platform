@@ -1,6 +1,7 @@
 // Prisma schema — centralized for the whole platform (apps/backend depends on this package).
 // Phase 1: Identity, Tenancy & Access Control.
-// See docs/DOMAIN_MODEL_PHASE1.md for the ratified domain decisions this schema implements.
+// Phase 2: Platform Backbone (Event Bus, Rules Engine, Workflow Engine, Notification Center).
+// See docs/DOMAIN_MODEL_PHASE1.md and docs/DOMAIN_MODEL_PHASE2.md for ratified domain decisions.
 
 datasource db {
   provider = "postgresql"
@@ -50,6 +51,12 @@ model Company {
   auditLogs AuditLog[]
 
   @@map("companies")
+  // Phase 2 back-relations intentionally omitted (Prisma does not require the
+  // opposite relation field to be declared on Company for the FK-only side
+  // to compile); Event/Rule/Workflow/Notification models reference companyId
+  // as a plain scalar column (no relation) since Company already has a very
+  // large fan-out — see docs/DOMAIN_MODEL_PHASE2.md for the tenant-isolation
+  // approach used instead (service-level scoping + tenant-extension).
 }
 
 model CompanyProfile {
@@ -448,4 +455,574 @@ model AuditLog {
   @@index([companyId])
   @@index([entityType, entityId])
   @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Event Bus (doc 28) — Phase 2
+// ─────────────────────────────────────────────────────────────────────────
+
+enum EventProcessingStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+  DEAD_LETTERED
+}
+
+model Event {
+  id             String   @id @default(uuid())
+  eventType      String   @map("event_type")
+  eventVersion   Int      @default(1) @map("event_version")
+  companyId      String   @map("company_id")
+  aggregateId    String?  @map("aggregate_id")
+  timestamp      DateTime @default(now())
+  source         String
+  correlationId  String?  @map("correlation_id")
+  payload        Json
+  metadata       Json?
+  streamMessageId String? @map("stream_message_id")
+  status         EventProcessingStatus @default(PENDING)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  consumers  EventConsumer[]
+  deadLetter DeadLetterEvent[]
+  replays    EventReplay[] @relation("ReplaySourceEvent")
+  audits     EventAudit[]
+
+  @@index([companyId])
+  @@index([eventType])
+  @@index([correlationId])
+  @@index([aggregateId])
+  @@map("events")
+}
+
+model EventSubscription {
+  id           String   @id @default(uuid())
+  topic        String
+  consumerGroup String  @map("consumer_group")
+  handlerName  String   @map("handler_name")
+  companyId    String?  @map("company_id")
+  isActive     Boolean  @default(true) @map("is_active")
+  maxRetries   Int      @default(5) @map("max_retries")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  consumers EventConsumer[]
+
+  @@unique([topic, consumerGroup])
+  @@map("event_subscriptions")
+}
+
+model EventConsumer {
+  id             String   @id @default(uuid())
+  subscriptionId String   @map("subscription_id")
+  eventId        String   @map("event_id")
+  status         EventProcessingStatus @default(PENDING)
+  attempts       Int      @default(0)
+  lastAttemptAt  DateTime? @map("last_attempt_at")
+  processedAt    DateTime? @map("processed_at")
+  lastError      String?  @map("last_error")
+  processingTimeMs Int?   @map("processing_time_ms")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  subscription EventSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  event        Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, eventId])
+  @@index([eventId])
+  @@index([status])
+  @@map("event_consumers")
+}
+
+model DeadLetterEvent {
+  id            String   @id @default(uuid())
+  eventId       String   @map("event_id")
+  subscriptionId String? @map("subscription_id")
+  reason        String
+  attempts      Int
+  lastError     String?  @map("last_error")
+  retriedAt     DateTime? @map("retried_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@map("dead_letter_events")
+}
+
+model EventReplay {
+  id            String   @id @default(uuid())
+  sourceEventId String?  @map("source_event_id")
+  filter        Json?
+  requestedById String?  @map("requested_by")
+  status        String   @default("PENDING")
+  eventsReplayed Int     @default(0) @map("events_replayed")
+  startedAt     DateTime @default(now()) @map("started_at")
+  completedAt   DateTime? @map("completed_at")
+
+  sourceEvent Event? @relation("ReplaySourceEvent", fields: [sourceEventId], references: [id], onDelete: SetNull)
+
+  @@map("event_replays")
+}
+
+model EventAudit {
+  id        String   @id @default(uuid())
+  eventId   String   @map("event_id")
+  action    String
+  detail    Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@map("event_audits")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Business Rules Engine (doc 23) — Phase 2
+// ─────────────────────────────────────────────────────────────────────────
+
+enum RuleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum RuleActionType {
+  ALLOW
+  BLOCK
+  WARN
+  REQUEST_APPROVAL
+  NOTIFY
+  GENERATE_TASK
+  EXECUTE_WORKFLOW
+  CALL_AI
+  CALL_API
+}
+
+model Rule {
+  id          String     @id @default(uuid())
+  companyId   String     @map("company_id")
+  name        String
+  module      String
+  priority    Int        @default(0)
+  status      RuleStatus @default(DRAFT)
+  description String?
+  effectiveFrom DateTime? @map("effective_from")
+  effectiveTo   DateTime? @map("effective_to")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  versions   RuleVersion[]
+  groupLinks RuleGroupMember[]
+  executions RuleExecution[]
+  audits     RuleAudit[]
+
+  @@index([companyId, module])
+  @@index([status])
+  @@map("rules")
+}
+
+model RuleVersion {
+  id         String     @id @default(uuid())
+  ruleId     String     @map("rule_id")
+  version    Int
+  status     RuleStatus @default(DRAFT)
+  condition  Json
+  action     Json
+  publishedAt DateTime? @map("published_at")
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  rule       Rule            @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  conditions RuleCondition[]
+  actions    RuleAction[]
+
+  @@unique([ruleId, version])
+  @@map("rule_versions")
+}
+
+model RuleCondition {
+  id            String   @id @default(uuid())
+  ruleVersionId String   @map("rule_version_id")
+  field         String
+  operator      String
+  value         Json
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  ruleVersion RuleVersion @relation(fields: [ruleVersionId], references: [id], onDelete: Cascade)
+
+  @@index([ruleVersionId])
+  @@map("rule_conditions")
+}
+
+model RuleAction {
+  id            String         @id @default(uuid())
+  ruleVersionId String         @map("rule_version_id")
+  type          RuleActionType
+  params        Json
+  order         Int            @default(0)
+  createdAt     DateTime       @default(now()) @map("created_at")
+
+  ruleVersion RuleVersion @relation(fields: [ruleVersionId], references: [id], onDelete: Cascade)
+
+  @@index([ruleVersionId])
+  @@map("rule_actions")
+}
+
+model RuleGroup {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  members RuleGroupMember[]
+
+  @@unique([companyId, name])
+  @@map("rule_groups")
+}
+
+model RuleGroupMember {
+  ruleGroupId String @map("rule_group_id")
+  ruleId      String @map("rule_id")
+
+  ruleGroup RuleGroup @relation(fields: [ruleGroupId], references: [id], onDelete: Cascade)
+  rule      Rule      @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@id([ruleGroupId, ruleId])
+  @@map("rule_group_members")
+}
+
+model RuleExecution {
+  id           String   @id @default(uuid())
+  ruleId       String   @map("rule_id")
+  companyId    String   @map("company_id")
+  triggerContext Json   @map("trigger_context")
+  decision     String
+  actionsPerformed Json @map("actions_performed")
+  durationMs   Int?     @map("duration_ms")
+  isSimulation Boolean  @default(false) @map("is_simulation")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  rule Rule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([ruleId])
+  @@map("rule_executions")
+}
+
+model RuleAudit {
+  id        String   @id @default(uuid())
+  ruleId    String   @map("rule_id")
+  action    String
+  actorUserId String? @map("actor_user_id")
+  detail    Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  rule Rule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+  @@map("rule_audits")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Workflow Engine (doc 22) — Phase 2
+// ─────────────────────────────────────────────────────────────────────────
+
+enum WorkflowStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum WorkflowNodeType {
+  START
+  AI_DECISION
+  CONDITION
+  APPROVAL
+  TASK
+  NOTIFICATION
+  API
+  DOCUMENT
+  DATABASE
+  DELAY
+  END
+}
+
+enum WorkflowExecutionStatus {
+  RUNNING
+  WAITING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Workflow {
+  id          String         @id @default(uuid())
+  companyId   String         @map("company_id")
+  name        String
+  description String?
+  status      WorkflowStatus @default(DRAFT)
+  triggerType String         @map("trigger_type")
+  triggerConfig Json?        @map("trigger_config")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  versions   WorkflowVersion[]
+  executions WorkflowExecution[]
+  audits     WorkflowAudit[]
+
+  @@index([companyId])
+  @@map("workflows")
+}
+
+model WorkflowVersion {
+  id         String         @id @default(uuid())
+  workflowId String         @map("workflow_id")
+  version    Int
+  status     WorkflowStatus @default(DRAFT)
+  publishedAt DateTime?     @map("published_at")
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  workflow Workflow       @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  nodes    WorkflowNode[]
+  edges    WorkflowEdge[]
+
+  @@unique([workflowId, version])
+  @@map("workflow_versions")
+}
+
+model WorkflowNode {
+  id               String           @id @default(uuid())
+  workflowVersionId String          @map("workflow_version_id")
+  key              String
+  type             WorkflowNodeType
+  name             String
+  config           Json
+  positionX        Float?           @map("position_x")
+  positionY        Float?           @map("position_y")
+
+  workflowVersion WorkflowVersion @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  edgesFrom       WorkflowEdge[]  @relation("EdgeFrom")
+  edgesTo         WorkflowEdge[]  @relation("EdgeTo")
+  tasks           WorkflowTask[]
+  approvals       WorkflowApproval[]
+
+  @@unique([workflowVersionId, key])
+  @@map("workflow_nodes")
+}
+
+model WorkflowEdge {
+  id               String   @id @default(uuid())
+  workflowVersionId String  @map("workflow_version_id")
+  fromNodeId       String   @map("from_node_id")
+  toNodeId         String   @map("to_node_id")
+  condition        Json?
+
+  workflowVersion WorkflowVersion @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  fromNode        WorkflowNode    @relation("EdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNode          WorkflowNode    @relation("EdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade)
+
+  @@index([workflowVersionId])
+  @@map("workflow_edges")
+}
+
+model WorkflowExecution {
+  id            String                  @id @default(uuid())
+  workflowId    String                  @map("workflow_id")
+  companyId     String                  @map("company_id")
+  status        WorkflowExecutionStatus @default(RUNNING)
+  currentNodeId String?                 @map("current_node_id")
+  context       Json
+  isSimulation  Boolean                 @default(false) @map("is_simulation")
+  resumeAt      DateTime?               @map("resume_at")
+  startedAt     DateTime                @default(now()) @map("started_at")
+  completedAt   DateTime?               @map("completed_at")
+  error         String?
+
+  workflow  Workflow           @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  tasks     WorkflowTask[]
+  approvals WorkflowApproval[]
+
+  @@index([companyId])
+  @@index([workflowId])
+  @@index([status])
+  @@map("workflow_executions")
+}
+
+model WorkflowTask {
+  id            String    @id @default(uuid())
+  executionId   String    @map("execution_id")
+  nodeId        String    @map("node_id")
+  assigneeUserId String?  @map("assignee_user_id")
+  assigneeTeamId String?  @map("assignee_team_id")
+  title         String
+  status        String    @default("PENDING")
+  dueDate       DateTime? @map("due_date")
+  completedAt   DateTime? @map("completed_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  execution WorkflowExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  node      WorkflowNode      @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@index([executionId])
+  @@map("workflow_tasks")
+}
+
+model WorkflowApproval {
+  id            String    @id @default(uuid())
+  executionId   String    @map("execution_id")
+  nodeId        String    @map("node_id")
+  approverUserId String?  @map("approver_user_id")
+  approverRoleId String?  @map("approver_role_id")
+  level         Int       @default(1)
+  status        String    @default("PENDING")
+  decidedAt     DateTime? @map("decided_at")
+  comment       String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  execution WorkflowExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  node      WorkflowNode      @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@index([executionId])
+  @@map("workflow_approvals")
+}
+
+model WorkflowTemplate {
+  id          String   @id @default(uuid())
+  companyId   String?  @map("company_id")
+  name        String
+  category    String?
+  definition  Json
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("workflow_templates")
+}
+
+model WorkflowAudit {
+  id         String   @id @default(uuid())
+  workflowId String   @map("workflow_id")
+  action     String
+  actorUserId String? @map("actor_user_id")
+  detail     Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId])
+  @@map("workflow_audits")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Notification Center (doc 24) — Phase 2
+// ─────────────────────────────────────────────────────────────────────────
+
+enum NotificationChannel {
+  EMAIL
+  IN_APP
+  WHATSAPP
+  SMS
+  PUSH
+}
+
+enum NotificationPriority {
+  CRITICAL
+  HIGH
+  NORMAL
+  LOW
+  INFORMATIONAL
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  READ
+}
+
+model Notification {
+  id          String               @id @default(uuid())
+  companyId   String               @map("company_id")
+  recipientUserId String           @map("recipient_user_id")
+  title       String
+  body        String
+  category    String
+  priority    NotificationPriority @default(NORMAL)
+  data        Json?
+  readAt      DateTime?            @map("read_at")
+  createdAt   DateTime             @default(now()) @map("created_at")
+
+  deliveries NotificationDelivery[]
+
+  @@index([companyId, recipientUserId])
+  @@index([readAt])
+  @@map("notifications")
+}
+
+model NotificationTemplate {
+  id        String   @id @default(uuid())
+  companyId String?  @map("company_id")
+  code      String
+  channel   NotificationChannel
+  subject   String?
+  body      String
+  variables Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([companyId, code, channel])
+  @@map("notification_templates")
+}
+
+model NotificationPreference {
+  id            String   @id @default(uuid())
+  userId        String   @unique @map("user_id")
+  channels      Json     @default("[\"EMAIL\",\"IN_APP\"]")
+  quietHoursStart String? @map("quiet_hours_start")
+  quietHoursEnd   String? @map("quiet_hours_end")
+  language      String   @default("en")
+  digestFrequency String @default("IMMEDIATE") @map("digest_frequency")
+  categoryMutes Json?    @map("category_mutes")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("notification_preferences")
+}
+
+model NotificationDelivery {
+  id             String                     @id @default(uuid())
+  notificationId String                     @map("notification_id")
+  channel        NotificationChannel
+  status         NotificationDeliveryStatus @default(PENDING)
+  attempts       Int                        @default(0)
+  lastError      String?                    @map("last_error")
+  sentAt         DateTime?                  @map("sent_at")
+  deliveredAt    DateTime?                  @map("delivered_at")
+  createdAt      DateTime                   @default(now()) @map("created_at")
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId])
+  @@map("notification_deliveries")
+}
+
+model NotificationGroup {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  name      String
+  memberUserIds Json @map("member_user_ids")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("notification_groups")
+}
+
+model NotificationAudit {
+  id        String   @id @default(uuid())
+  notificationId String? @map("notification_id")
+  action    String
+  detail    Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([notificationId])
+  @@map("notification_audits")
 }

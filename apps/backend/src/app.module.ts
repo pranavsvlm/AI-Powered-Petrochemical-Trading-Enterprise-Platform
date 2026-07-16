@@ -7,9 +7,23 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CompanyModule } from './modules/company/company.module';
 import { UsersModule } from './modules/users/users.module';
 import { RolesModule } from './modules/roles/roles.module';
+import { EventsModule } from './modules/events/events.module';
+import { RulesModule } from './modules/rules/rules.module';
+import { WorkflowsModule } from './modules/workflows/workflows.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, CompanyModule, UsersModule, RolesModule],
+  imports: [
+    PrismaModule,
+    AuthModule,
+    CompanyModule,
+    UsersModule,
+    RolesModule,
+    EventsModule,
+    RulesModule,
+    WorkflowsModule,
+    NotificationsModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

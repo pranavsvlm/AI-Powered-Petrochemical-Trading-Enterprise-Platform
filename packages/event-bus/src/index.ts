@@ -1,10 +1,16 @@
-// Pub/sub abstraction — transport-agnostic contract only, no implementation.
 export const PACKAGE_NAME = '@platform/event-bus';
 
-export type EventHandler<TPayload = unknown> = (payload: TPayload) => void | Promise<void>;
+export type { EventEnvelope, PublishOptions } from './domain/event-envelope';
+export { EVENT_TYPES } from './domain/event-catalog';
+export type { EventTypeName } from './domain/event-catalog';
+export { EventBusError, TenantMismatchError, EventNotFoundError } from './domain/errors';
+export { computeBackoffMs, hasExceededMaxRetries } from './domain/backoff';
 
-export interface EventBus {
-  publish<TPayload = unknown>(topic: string, payload: TPayload): Promise<void>;
-  subscribe<TPayload = unknown>(topic: string, handler: EventHandler<TPayload>): Promise<void>;
-  unsubscribe(topic: string, handler: EventHandler): Promise<void>;
-}
+export { RedisStreamsEventBus } from './infrastructure/redis-streams.adapter';
+export type { EventHandler } from './infrastructure/redis-streams.adapter';
+export { getSharedRedisConnection, createRedisConnection } from './infrastructure/redis-connection';
+
+export { EventQueryService } from './application/event-query.service';
+export type { EventListFilter } from './application/event-query.service';
+export { EventReplayService } from './application/event-replay.service';
+export type { ReplayFilter } from './application/event-replay.service';
