@@ -13,6 +13,7 @@ RUN pnpm install --frozen-lockfile || pnpm install
 
 FROM deps AS build
 COPY . .
+RUN pnpm --filter @platform/database exec prisma generate
 RUN pnpm turbo run build --filter=@platform/backend...
 
 FROM node:20-alpine AS runtime

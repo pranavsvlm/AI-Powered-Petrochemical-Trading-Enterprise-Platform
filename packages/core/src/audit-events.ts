@@ -1,0 +1,39 @@
+/** Canonical audit event type strings — see docs/06,07,08,09 "Audit Events" sections. */
+export enum AuditEventType {
+  USER_CREATED = 'USER_CREATED',
+  USER_UPDATED = 'USER_UPDATED',
+  ROLE_CHANGED = 'ROLE_CHANGED',
+  PASSWORD_RESET = 'PASSWORD_RESET',
+  LOGIN = 'LOGIN',
+  LOGIN_FAILED = 'LOGIN_FAILED',
+  LOGOUT = 'LOGOUT',
+  SESSION_REVOKED = 'SESSION_REVOKED',
+  ACCOUNT_LOCKED = 'ACCOUNT_LOCKED',
+  MFA_ENABLED = 'MFA_ENABLED',
+  MFA_DISABLED = 'MFA_DISABLED',
+
+  COMPANY_CREATED = 'COMPANY_CREATED',
+  COMPANY_UPDATED = 'COMPANY_UPDATED',
+  COMPANY_SUSPENDED = 'COMPANY_SUSPENDED',
+  FEATURE_ENABLED = 'FEATURE_ENABLED',
+  FEATURE_DISABLED = 'FEATURE_DISABLED',
+  BRANDING_UPDATED = 'BRANDING_UPDATED',
+  AI_SETTINGS_CHANGED = 'AI_SETTINGS_CHANGED',
+
+  PERMISSION_CHANGED = 'PERMISSION_CHANGED',
+  ROLE_ASSIGNED = 'ROLE_ASSIGNED',
+  POLICY_UPDATED = 'POLICY_UPDATED',
+  APPROVAL_GRANTED = 'APPROVAL_GRANTED',
+  APPROVAL_REJECTED = 'APPROVAL_REJECTED',
+}
+
+export interface AuditEntry {
+  companyId: string | null;
+  actorUserId: string | null;
+  eventType: AuditEventType;
+  entityType: string;
+  entityId: string | null;
+  before?: unknown;
+  after?: unknown;
+  ipAddress?: string | null;
+}

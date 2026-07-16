@@ -1,5 +1,6 @@
 // Prisma schema — centralized for the whole platform (apps/backend depends on this package).
-// Domain models defined per Phase 1 of the roadmap — intentionally empty in the skeleton.
+// Phase 1: Identity, Tenancy & Access Control.
+// See docs/DOMAIN_MODEL_PHASE1.md for the ratified domain decisions this schema implements.
 
 datasource db {
   provider = "postgresql"
@@ -8,4 +9,443 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Company Management (doc 08)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum CompanyStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+model Company {
+  id                  String        @id @default(uuid())
+  companyCode         String        @unique @map("company_code")
+  legalName           String        @map("legal_name")
+  tradeName           String?       @map("trade_name")
+  registrationNumber  String?       @unique @map("registration_number")
+  taxNumber           String?       @map("tax_number")
+  country             String
+  timezone            String
+  currency            String
+  language             String       @default("en")
+  status              CompanyStatus @default(PENDING)
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+
+  profile   CompanyProfile?
+  settings  CompanySettings?
+  features  CompanyFeature[]
+  branches  Branch[]
+  users     User[]
+  departments Department[]
+  teams     Team[]
+  roles     Role[]
+  policies  Policy[]
+  approvalRules ApprovalRule[]
+  auditLogs AuditLog[]
+
+  @@map("companies")
+}
+
+model CompanyProfile {
+  id                 String   @id @default(uuid())
+  companyId          String   @unique @map("company_id")
+  logo               String?
+  favicon            String?
+  colors             Json?
+  emailSignature     String?  @map("email_signature")
+  quotationTemplate  String?  @map("quotation_template")
+  invoiceTemplate    String?  @map("invoice_template")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("company_profiles")
+}
+
+model CompanySettings {
+  id              String   @id @default(uuid())
+  companyId       String   @unique @map("company_id")
+  aiProvider      String?  @map("ai_provider")
+  defaultCurrency String   @map("default_currency")
+  dateFormat      String   @default("YYYY-MM-DD") @map("date_format")
+  numberFormat    String   @default("1,234.56") @map("number_format")
+  businessHours   Json?    @map("business_hours")
+  approvalRules   Json?    @map("approval_rules")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("company_settings")
+}
+
+model CompanyFeature {
+  id         String   @id @default(uuid())
+  companyId  String   @map("company_id")
+  moduleName String   @map("module_name")
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, moduleName])
+  @@map("company_features")
+}
+
+enum BranchType {
+  HEADQUARTERS
+  REGIONAL_OFFICE
+  WAREHOUSE
+  SALES_OFFICE
+  MANUFACTURING_PLANT
+}
+
+model Branch {
+  id             String     @id @default(uuid())
+  companyId      String     @map("company_id")
+  name           String
+  type           BranchType
+  addressLine1   String?    @map("address_line1")
+  addressLine2   String?    @map("address_line2")
+  city           String?
+  state          String?
+  country        String?
+  postalCode     String?    @map("postal_code")
+  businessHours  Json?      @map("business_hours")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("branches")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// User Management (doc 06)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum UserStatus {
+  PENDING_INVITATION
+  ACTIVE
+  SUSPENDED
+  LOCKED
+  ARCHIVED
+}
+
+model User {
+  id             String     @id @default(uuid())
+  companyId      String     @map("company_id")
+  employeeCode   String?    @map("employee_code")
+  firstName      String     @map("first_name")
+  lastName       String     @map("last_name")
+  email          String
+  phone          String?
+  avatar         String?
+  passwordHash   String     @map("password_hash")
+  status         UserStatus @default(PENDING_INVITATION)
+  lastLogin      DateTime?  @map("last_login")
+  timezone       String     @default("UTC")
+  language       String     @default("en")
+  failedLoginAttempts Int   @default(0) @map("failed_login_attempts")
+  lockedUntil    DateTime?  @map("locked_until")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  managedDepartments Department[] @relation("DepartmentManager")
+  roles           UserRole[]
+  sessions        UserSession[]
+  mfa             UserMfa[]
+  passwordResets  PasswordResetToken[]
+  emailVerifications EmailVerificationToken[]
+  auditLogsAsActor AuditLog[] @relation("AuditActor")
+  requestedApprovals ApprovalHistory[] @relation("ApprovalRequestedBy")
+  decidedApprovals   ApprovalHistory[] @relation("ApprovalDecidedBy")
+
+  @@unique([companyId, email])
+  @@index([companyId])
+  @@map("users")
+}
+
+model Department {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  name      String
+  managerId String?  @map("manager_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  manager User?    @relation("DepartmentManager", fields: [managerId], references: [id], onDelete: SetNull)
+  teams   Team[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("departments")
+}
+
+model Team {
+  id           String   @id @default(uuid())
+  companyId    String   @map("company_id")
+  departmentId String   @map("department_id")
+  name         String
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@unique([departmentId, name])
+  @@index([companyId])
+  @@map("teams")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Roles & Permissions (doc 07)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum PermissionAction {
+  VIEW
+  CREATE
+  EDIT
+  DELETE
+  APPROVE
+  REJECT
+  EXPORT
+  IMPORT
+  PRINT
+  SHARE
+  EXECUTE_AI
+  MANAGE_SETTINGS
+}
+
+model Role {
+  id            String   @id @default(uuid())
+  companyId     String?  @map("company_id")
+  name          String
+  isSystemRole  Boolean  @default(false) @map("is_system_role")
+  description   String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  company     Company?         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  permissions RolePermission[]
+  users       UserRole[]
+  approvalRulesAsApprover ApprovalRule[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("roles")
+}
+
+model PermissionGroup {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  permissions Permission[]
+
+  @@map("permission_groups")
+}
+
+model Permission {
+  id      String            @id @default(uuid())
+  code    String            @unique
+  module  String
+  action  PermissionAction
+  groupId String?           @map("group_id")
+
+  group PermissionGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  roles RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId    String   @map("user_id")
+  roleId    String   @map("role_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Policy {
+  id         String   @id @default(uuid())
+  companyId  String   @map("company_id")
+  name       String
+  definition Json
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("policies")
+}
+
+model ApprovalRule {
+  id               String   @id @default(uuid())
+  companyId        String   @map("company_id")
+  name             String
+  triggerCondition Json     @map("trigger_condition")
+  approverRoleId   String   @map("approver_role_id")
+  threshold        Json?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  approverRole Role              @relation(fields: [approverRoleId], references: [id], onDelete: Restrict)
+  history      ApprovalHistory[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("approval_rules")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model ApprovalHistory {
+  id             String         @id @default(uuid())
+  approvalRuleId String         @map("approval_rule_id")
+  requestedById  String         @map("requested_by")
+  approvedById   String?        @map("approved_by")
+  status         ApprovalStatus @default(PENDING)
+  decidedAt      DateTime?      @map("decided_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  approvalRule ApprovalRule @relation(fields: [approvalRuleId], references: [id], onDelete: Cascade)
+  requestedBy  User         @relation("ApprovalRequestedBy", fields: [requestedById], references: [id])
+  approvedBy   User?        @relation("ApprovalDecidedBy", fields: [approvedById], references: [id])
+
+  @@index([approvalRuleId])
+  @@map("approval_history")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Authentication & Security (doc 09)
+// ─────────────────────────────────────────────────────────────────────────
+
+model UserSession {
+  id                String    @id @default(uuid())
+  userId            String    @map("user_id")
+  device            String?
+  browser           String?
+  os                String?
+  ipAddress         String?   @map("ip_address")
+  country           String?
+  loginTime         DateTime  @default(now()) @map("login_time")
+  lastActivity      DateTime  @default(now()) @map("last_activity")
+  refreshTokenHash  String    @map("refresh_token_hash")
+  expiresAt         DateTime  @map("expires_at")
+  revokedAt         DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_sessions")
+}
+
+enum MfaMethod {
+  TOTP
+  EMAIL_OTP
+}
+
+model UserMfa {
+  id                String    @id @default(uuid())
+  userId            String    @map("user_id")
+  method            MfaMethod
+  secretEncrypted   String?   @map("secret_encrypted")
+  enabled           Boolean   @default(false)
+  backupCodesHashed String[]  @map("backup_codes_hashed")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, method])
+  @@map("user_mfa")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Audit Logging (docs 06/07/08/09)
+// ─────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  companyId   String?  @map("company_id")
+  actorUserId String?  @map("actor_user_id")
+  eventType   String   @map("event_type")
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id")
+  before      Json?
+  after       Json?
+  ipAddress   String?  @map("ip_address")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  actor   User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
 }
