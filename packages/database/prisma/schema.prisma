@@ -1,7 +1,9 @@
 // Prisma schema — centralized for the whole platform (apps/backend depends on this package).
 // Phase 1: Identity, Tenancy & Access Control.
 // Phase 2: Platform Backbone (Event Bus, Rules Engine, Workflow Engine, Notification Center).
-// See docs/DOMAIN_MODEL_PHASE1.md and docs/DOMAIN_MODEL_PHASE2.md for ratified domain decisions.
+// Phase 3: Storage, Documents & Search.
+// Phase 4: Core Trading Domain (Customers, Products, RFQ -> Quotation -> Order).
+// See docs/DOMAIN_MODEL_PHASE{1,2,3,4}.md for ratified domain decisions.
 
 datasource db {
   provider = "postgresql"
@@ -53,6 +55,15 @@ model Company {
   documentCategories DocumentCategory[]
   documentTags       DocumentTag[]
   documents          Document[]
+  customers          Customer[]
+  categories         Category[]
+  products           Product[]
+  productAttributes  ProductAttribute[]
+  priceLists         PriceList[]
+  rfqs               Rfq[]
+  quotations         Quotation[]
+  orders             Order[]
+  approvalRequests   ApprovalRequest[]
 
   @@map("companies")
   // Phase 2 back-relations intentionally omitted (Prisma does not require the
@@ -715,6 +726,7 @@ model RuleExecution {
 
   rule Rule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
   documentApprovals DocumentApproval[]
+  approvalRequests  ApprovalRequest[]
 
   @@index([companyId])
   @@index([ruleId])
@@ -1242,4 +1254,504 @@ model DocumentEmbedding {
 
   @@index([documentId])
   @@map("document_embeddings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Core Trading Domain (docs 11/12/13) — Phase 4
+// Customer Management, Product Information Management, and the RFQ -> Quotation -> Order
+// state machine. See docs/DOMAIN_MODEL_PHASE4.md for the ratified state machines, the
+// approval-gate wiring (delegated to RuleEvaluationService.evaluateApproval, never
+// reimplemented — same law as docs/DOMAIN_MODEL_PHASE3.md §6), and the cross-module
+// composition rule (Prisma FK relations are allowed cross-module since the schema is shared
+// platform infrastructure; a module's Repository class is never imported by another module).
+// ─────────────────────────────────────────────────────────────────────────
+
+enum CustomerStatus {
+  PROSPECT
+  QUALIFIED_LEAD
+  ACTIVE
+  PENDING_APPROVAL
+  ARCHIVED
+}
+
+enum CustomerType {
+  DISTRIBUTOR
+  END_USER
+  TRADER
+  MANUFACTURER
+  OTHER
+}
+
+enum ActivityType {
+  NOTE
+  CALL
+  EMAIL
+  MEETING
+  TASK
+}
+
+model Customer {
+  id               String         @id @default(uuid())
+  companyId        String         @map("company_id")
+  customerCode     String         @map("customer_code")
+  legalName        String         @map("legal_name")
+  tradeName        String?        @map("trade_name")
+  taxNumber        String?        @map("tax_number")
+  country          String
+  city             String?
+  address          String?
+  currency         String
+  language         String?        @default("en")
+  industry         String?
+  website          String?
+  status           CustomerStatus @default(PROSPECT)
+  customerType     CustomerType?  @map("customer_type")
+  segment          String?
+  tags             String[]       @default([])
+  creditLimit      Decimal?       @map("credit_limit")
+  paymentTermsDays Int?           @map("payment_terms_days")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  contacts   Contact[]
+  activities CustomerActivity[]
+  priceLists PriceList[]
+  rfqs       Rfq[]
+  quotations Quotation[]
+  orders     Order[]
+
+  @@unique([companyId, customerCode])
+  @@index([companyId, status])
+  @@map("customers")
+}
+
+model Contact {
+  id         String   @id @default(uuid())
+  customerId String   @map("customer_id")
+  firstName  String   @map("first_name")
+  lastName   String   @map("last_name")
+  email      String?
+  phone      String?
+  jobTitle   String?  @map("job_title")
+  isPrimary  Boolean  @default(false) @map("is_primary")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("contacts")
+}
+
+model CustomerActivity {
+  id           String       @id @default(uuid())
+  customerId   String       @map("customer_id")
+  type         ActivityType
+  body         String
+  authorUserId String       @map("author_user_id")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_activities")
+}
+
+enum ProductStatus {
+  DRAFT
+  PENDING_APPROVAL
+  ACTIVE
+  DISCONTINUED
+  ARCHIVED
+}
+
+enum AttributeDataType {
+  STRING
+  NUMBER
+  BOOLEAN
+  DATE
+}
+
+enum PackagingType {
+  DRUM
+  IBC
+  FLEXIBAG
+  ISO_TANK
+  TANK_TRUCK
+  BULK_VESSEL
+  BAG
+  PAIL
+  CUSTOM
+}
+
+enum UnitOfMeasure {
+  MT
+  KG
+  LITER
+  GALLON
+  BARREL
+  CUBIC_METER
+  PIECE
+}
+
+enum PriceType {
+  BASE
+  CUSTOMER_SPECIFIC
+  CONTRACT
+  PROMOTIONAL
+  QUANTITY_BREAK
+  REGION
+}
+
+// Collapses doc 12's 7-level Business Unit -> Category -> SubCategory -> Product Family tree
+// into one self-referential table — see docs/DOMAIN_MODEL_PHASE4.md.
+model Category {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  name      String
+  parentId  String?  @map("parent_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company  Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent   Category?  @relation("CategoryChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryChildren")
+  products Product[]
+
+  @@index([companyId, parentId])
+  @@map("categories")
+}
+
+// A Variant (doc 12) is a Product row pointing at its parent via parentProductId.
+model Product {
+  id              String        @id @default(uuid())
+  companyId       String        @map("company_id")
+  sku             String
+  productCode     String?       @map("product_code")
+  name            String
+  categoryId      String?       @map("category_id")
+  parentProductId String?       @map("parent_product_id")
+  brand           String?
+  manufacturer    String?
+  countryOfOrigin String?       @map("country_of_origin")
+  hsCode          String?       @map("hs_code")
+  casNumber       String?       @map("cas_number")
+  unNumber        String?       @map("un_number")
+  description     String?
+  baseUom         UnitOfMeasure @map("base_uom")
+  standardCost    Decimal?      @map("standard_cost")
+  status          ProductStatus @default(DRAFT)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  company       Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category      Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  parentProduct Product?  @relation("ProductVariants", fields: [parentProductId], references: [id], onDelete: SetNull)
+  variants      Product[] @relation("ProductVariants")
+
+  attributeValues    ProductAttributeValue[]
+  packaging          ProductPackaging[]
+  priceLists         PriceList[]
+  rfqLineItems       RfqLineItem[]
+  quotationLineItems QuotationLineItem[]
+  orderLineItems     OrderLineItem[]
+
+  @@unique([companyId, sku])
+  @@index([companyId, status])
+  @@index([companyId, categoryId])
+  @@map("products")
+}
+
+// EAV pattern per doc 12: "companies may create unlimited attributes without code changes."
+model ProductAttribute {
+  id        String            @id @default(uuid())
+  companyId String            @map("company_id")
+  name      String
+  dataType  AttributeDataType @map("data_type")
+  unit      String?
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  company Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  values  ProductAttributeValue[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("product_attributes")
+}
+
+model ProductAttributeValue {
+  id          String   @id @default(uuid())
+  productId   String   @map("product_id")
+  attributeId String   @map("attribute_id")
+  value       String
+  // Numeric shadow column so numeric-typed attributes (Density, Viscosity, Flash Point) can
+  // be range-queried without parsing the string `value` column at read time.
+  valueNumber Decimal? @map("value_number")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  product   Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  attribute ProductAttribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, attributeId])
+  @@index([attributeId, valueNumber])
+  @@map("product_attribute_values")
+}
+
+model ProductPackaging {
+  id              String         @id @default(uuid())
+  productId       String         @map("product_id")
+  packagingType   PackagingType  @map("packaging_type")
+  unitsPerPackage Decimal?       @map("units_per_package")
+  uom             UnitOfMeasure?
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, packagingType])
+  @@map("product_packaging")
+}
+
+// customerId = null means a general (non-customer-specific) price list entry.
+model PriceList {
+  id          String        @id @default(uuid())
+  companyId   String        @map("company_id")
+  productId   String        @map("product_id")
+  customerId  String?       @map("customer_id")
+  priceType   PriceType     @default(BASE) @map("price_type")
+  region      String?
+  currency    String
+  uom         UnitOfMeasure
+  minQuantity Decimal       @default(0) @map("min_quantity")
+  unitPrice   Decimal       @map("unit_price")
+  validFrom   DateTime?     @map("valid_from")
+  validTo     DateTime?     @map("valid_to")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  product  Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, productId, customerId])
+  @@map("price_lists")
+}
+
+enum RfqStatus {
+  DRAFT
+  SUBMITTED
+  QUOTED
+  CLOSED
+  CANCELLED
+}
+
+// No REJECTED value here, deliberately: rejection is recorded on ApprovalRequest.status (which
+// already carries APPROVED/REJECTED), and a rejected Quotation reopens straight to NEGOTIATING
+// — mirroring DocumentStatus, which likewise has no REJECTED value of its own. Keeping a
+// parallel REJECTED status on the aggregate would duplicate state the approval record already
+// owns, the exact "second approval system" pattern docs/DOMAIN_MODEL_PHASE3.md §6 forbids.
+enum QuotationStatus {
+  DRAFT
+  SENT
+  NEGOTIATING
+  PENDING_APPROVAL
+  APPROVED
+  CONVERTED
+  CANCELLED
+}
+
+enum OrderStatus {
+  PENDING_CONFIRMATION
+  CONFIRMED
+  PARTIALLY_FULFILLED
+  FULFILLED
+  ON_HOLD
+  CLOSED
+  CANCELLED
+}
+
+enum Incoterm {
+  FOB
+  CIF
+  CFR
+  EXW
+  FCA
+  DDP
+  DAP
+}
+
+model Rfq {
+  id              String    @id @default(uuid())
+  companyId       String    @map("company_id")
+  rfqNumber       String    @map("rfq_number")
+  customerId      String    @map("customer_id")
+  status          RfqStatus @default(DRAFT)
+  currency        String
+  notes           String?
+  createdByUserId String    @map("created_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  company    Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer   Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  lineItems  RfqLineItem[]
+  quotations Quotation[]
+
+  @@unique([companyId, rfqNumber])
+  @@index([companyId, status])
+  @@map("rfqs")
+}
+
+model RfqLineItem {
+  id          String        @id @default(uuid())
+  rfqId       String        @map("rfq_id")
+  productId   String        @map("product_id")
+  quantity    Decimal
+  uom         UnitOfMeasure
+  targetPrice Decimal?      @map("target_price")
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  rfq     Rfq     @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([rfqId])
+  @@map("rfq_line_items")
+}
+
+// rfqId is nullable — a Quotation may be created directly, without a prior RFQ.
+model Quotation {
+  id                   String          @id @default(uuid())
+  companyId            String          @map("company_id")
+  quotationNumber      String          @map("quotation_number")
+  rfqId                String?         @map("rfq_id")
+  customerId           String          @map("customer_id")
+  status               QuotationStatus @default(DRAFT)
+  currency             String
+  validUntil           DateTime?       @map("valid_until")
+  // Denormalized from the current QuotationVersion for fast list/read without a join.
+  currentVersionNumber Int             @default(1) @map("current_version_number")
+  subtotal             Decimal         @default(0)
+  discountAmount       Decimal         @default(0) @map("discount_amount")
+  totalAmount          Decimal         @default(0) @map("total_amount")
+  marginPercent        Decimal?        @map("margin_percent")
+  createdByUserId      String          @map("created_by_user_id")
+  createdAt            DateTime        @default(now()) @map("created_at")
+  updatedAt            DateTime        @updatedAt @map("updated_at")
+
+  company  Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  rfq      Rfq?               @relation(fields: [rfqId], references: [id], onDelete: SetNull)
+  customer Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  versions QuotationVersion[]
+  orders   Order[]
+
+  @@unique([companyId, quotationNumber])
+  @@index([companyId, status])
+  @@index([companyId, customerId])
+  @@map("quotations")
+}
+
+model QuotationVersion {
+  id              String   @id @default(uuid())
+  quotationId     String   @map("quotation_id")
+  versionNumber   Int      @map("version_number")
+  subtotal        Decimal  @default(0)
+  discountAmount  Decimal  @default(0) @map("discount_amount")
+  totalAmount     Decimal  @default(0) @map("total_amount")
+  marginPercent   Decimal? @map("margin_percent")
+  createdByUserId String   @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  quotation Quotation           @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  lineItems QuotationLineItem[]
+
+  @@unique([quotationId, versionNumber])
+  @@map("quotation_versions")
+}
+
+model QuotationLineItem {
+  id                 String        @id @default(uuid())
+  quotationVersionId String        @map("quotation_version_id")
+  productId          String        @map("product_id")
+  quantity           Decimal
+  uom                UnitOfMeasure
+  unitPrice          Decimal       @map("unit_price")
+  discountPercent    Decimal       @default(0) @map("discount_percent")
+  lineTotal          Decimal       @map("line_total")
+
+  quotationVersion QuotationVersion @relation(fields: [quotationVersionId], references: [id], onDelete: Cascade)
+  product          Product          @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([quotationVersionId])
+  @@map("quotation_line_items")
+}
+
+// Polymorphic across Customer/Quotation/Order (entityType/entityId) — mirrors
+// DocumentApproval's shape exactly, including the RuleExecution link. Only ever *records* the
+// outcome of RuleEvaluationService.evaluateApproval; never makes its own decision — see
+// docs/DOMAIN_MODEL_PHASE3.md §6 and docs/DOMAIN_MODEL_PHASE4.md.
+model ApprovalRequest {
+  id              String         @id @default(uuid())
+  companyId       String         @map("company_id")
+  entityType      String         @map("entity_type")
+  entityId        String         @map("entity_id")
+  ruleExecutionId String?        @map("rule_execution_id")
+  status          ApprovalStatus @default(PENDING)
+  approverUserId  String?        @map("approver_user_id")
+  approverRoleId  String?        @map("approver_role_id")
+  decidedAt       DateTime?      @map("decided_at")
+  comment         String?
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ruleExecution RuleExecution? @relation(fields: [ruleExecutionId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, entityType, entityId])
+  @@map("approval_requests")
+}
+
+// quotationId is nullable — an Order may be created directly from a Customer (repeat-order
+// fast path) without a prior Quotation.
+model Order {
+  id              String      @id @default(uuid())
+  companyId       String      @map("company_id")
+  orderNumber     String      @map("order_number")
+  customerId      String      @map("customer_id")
+  quotationId     String?     @map("quotation_id")
+  status          OrderStatus @default(PENDING_CONFIRMATION)
+  currency        String
+  incoterm        Incoterm?
+  subtotal        Decimal     @default(0)
+  totalAmount     Decimal     @default(0) @map("total_amount")
+  createdByUserId String      @map("created_by_user_id")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  company   Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer  Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  quotation Quotation?      @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+  lineItems OrderLineItem[]
+
+  @@unique([companyId, orderNumber])
+  @@index([companyId, status])
+  @@index([companyId, customerId])
+  @@map("orders")
+}
+
+model OrderLineItem {
+  id                String        @id @default(uuid())
+  orderId           String        @map("order_id")
+  productId         String        @map("product_id")
+  quantity          Decimal
+  uom               UnitOfMeasure
+  unitPrice         Decimal       @map("unit_price")
+  lineTotal         Decimal       @map("line_total")
+  fulfilledQuantity Decimal       @default(0) @map("fulfilled_quantity")
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@map("order_line_items")
 }

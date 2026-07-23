@@ -1,6 +1,12 @@
 # @modules/customers
 
-Customer relationship records and lifecycle module.
+Customer relationship records and lifecycle (doc 11): profile, contacts, credit terms,
+segmentation, activity notes, and an audit-log-backed timeline (`getTimeline` reads `AuditLog`
+filtered by `entityType='Customer'` rather than a bespoke timeline table).
+
+Approval (for accounts flagged `PENDING_APPROVAL`) is **delegated to `@platform/rules-engine`**
+(`ApprovalEvaluator.evaluateApproval`), never reimplemented here. AI Customer Profile analysis is
+out of scope — see `docs/DOMAIN_MODEL_PHASE4.md`.
 
 ## Structure
 
@@ -17,5 +23,3 @@ Follows the platform module contract (see docs/03_Monorepo_Architecture.md):
 - `docs/` — module-specific documentation
 
 No module may directly depend on another module's internals.
-
-> Status: skeleton — no business logic implemented yet.

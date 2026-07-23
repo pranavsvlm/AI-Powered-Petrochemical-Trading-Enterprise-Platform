@@ -45,11 +45,27 @@ const PHASE2_MODULES = ['events', 'rules', 'workflows', 'notifications'];
  */
 const PHASE3_MODULES = ['documents'];
 
-export const SEED_PERMISSIONS = [...PHASE1_MODULES, ...PHASE2_MODULES, ...PHASE3_MODULES].flatMap(
-  (module) =>
-    Object.values(PermissionAction).map((action) => ({
-      code: `${module}:${action.toLowerCase()}`,
-      module,
-      action,
-    })),
+/**
+ * Phase 4's Core Trading Domain surface area (docs 11/12/13: Customers, Products, RFQ +
+ * Quotation, Orders). Doc-bespoke permission names ("Manage Pricing", "Manage Categories",
+ * "AI Customer Analysis", "Use AI Product Expert") map onto the existing PermissionAction enum
+ * rather than adding new actions — e.g. both "Manage Pricing" and "Manage Categories" become
+ * `products:manage_settings`; "AI Customer Analysis"/"Use AI Product Expert" become
+ * `customers:execute_ai`/`products:execute_ai`; "Export Documents" reuses the existing
+ * `documents:export` permission. `modules/trading` is deferred to Phase 5 (see
+ * docs/DOMAIN_MODEL_PHASE4.md) so it is deliberately not seeded here.
+ */
+const PHASE4_MODULES = ['customers', 'products', 'quotations', 'orders'];
+
+export const SEED_PERMISSIONS = [
+  ...PHASE1_MODULES,
+  ...PHASE2_MODULES,
+  ...PHASE3_MODULES,
+  ...PHASE4_MODULES,
+].flatMap((module) =>
+  Object.values(PermissionAction).map((action) => ({
+    code: `${module}:${action.toLowerCase()}`,
+    module,
+    action,
+  })),
 );

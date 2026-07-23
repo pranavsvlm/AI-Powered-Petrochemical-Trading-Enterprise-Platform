@@ -12,6 +12,10 @@ import { RulesModule } from './modules/rules/rules.module';
 import { WorkflowsModule } from './modules/workflows/workflows.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { DocumentsModule } from './modules/documents/documents.module';
+import { CustomersModule } from './modules/customers/customers.module';
+import { ProductsModule } from './modules/products/products.module';
+import { QuotationsModule } from './modules/quotations/quotations.module';
+import { OrdersModule } from './modules/orders/orders.module';
 
 @Module({
   imports: [
@@ -25,6 +29,10 @@ import { DocumentsModule } from './modules/documents/documents.module';
     WorkflowsModule,
     NotificationsModule,
     DocumentsModule,
+    CustomersModule,
+    ProductsModule,
+    QuotationsModule,
+    OrdersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

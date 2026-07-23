@@ -44,9 +44,21 @@ importers:
       '@modules/company':
         specifier: workspace:*
         version: link:../../modules/company
+      '@modules/customers':
+        specifier: workspace:*
+        version: link:../../modules/customers
       '@modules/document-management':
         specifier: workspace:*
         version: link:../../modules/document-management
+      '@modules/orders':
+        specifier: workspace:*
+        version: link:../../modules/orders
+      '@modules/products':
+        specifier: workspace:*
+        version: link:../../modules/products
+      '@modules/quotations':
+        specifier: workspace:*
+        version: link:../../modules/quotations
       '@modules/users':
         specifier: workspace:*
         version: link:../../modules/users
@@ -255,12 +267,37 @@ importers:
 
   modules/customers:
     dependencies:
+      '@nestjs/common':
+        specifier: ^10.4.4
+        version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@platform/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@platform/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@platform/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
       '@platform/types':
         specifier: workspace:*
         version: link:../../packages/types
+    devDependencies:
+      '@types/jest':
+        specifier: ^29.5.13
+        version: 29.5.14
+      '@types/node':
+        specifier: ^20.16.11
+        version: 20.19.43
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
+      ts-jest:
+        specifier: ^29.2.5
+        version: 29.4.11(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
 
   modules/document-management:
     dependencies:
@@ -328,12 +365,37 @@ importers:
 
   modules/orders:
     dependencies:
+      '@nestjs/common':
+        specifier: ^10.4.4
+        version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@platform/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@platform/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@platform/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
       '@platform/types':
         specifier: workspace:*
         version: link:../../packages/types
+    devDependencies:
+      '@types/jest':
+        specifier: ^29.5.13
+        version: 29.5.14
+      '@types/node':
+        specifier: ^20.16.11
+        version: 20.19.43
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
+      ts-jest:
+        specifier: ^29.2.5
+        version: 29.4.11(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
 
   modules/procurement:
     dependencies:
@@ -346,21 +408,71 @@ importers:
 
   modules/products:
     dependencies:
+      '@nestjs/common':
+        specifier: ^10.4.4
+        version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@platform/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@platform/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@platform/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
       '@platform/types':
         specifier: workspace:*
         version: link:../../packages/types
+    devDependencies:
+      '@types/jest':
+        specifier: ^29.5.13
+        version: 29.5.14
+      '@types/node':
+        specifier: ^20.16.11
+        version: 20.19.43
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
+      ts-jest:
+        specifier: ^29.2.5
+        version: 29.4.11(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
 
   modules/quotations:
     dependencies:
+      '@nestjs/common':
+        specifier: ^10.4.4
+        version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@platform/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@platform/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@platform/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
       '@platform/types':
         specifier: workspace:*
         version: link:../../packages/types
+    devDependencies:
+      '@types/jest':
+        specifier: ^29.5.13
+        version: 29.5.14
+      '@types/node':
+        specifier: ^20.16.11
+        version: 20.19.43
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
+      ts-jest:
+        specifier: ^29.2.5
+        version: 29.4.11(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
 
   modules/reports:
     dependencies:
