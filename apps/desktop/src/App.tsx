@@ -1,7 +1,15 @@
+import { RouterProvider } from 'react-router-dom';
+import { ApiClientProvider } from '@platform/ui';
+import { AuthProvider } from './store/AuthContext';
+import { desktopApiClient } from './lib/api-client';
+import { router } from './router';
+
 export function App() {
   return (
-    <div>
-      <h1>NavOasis Platform</h1>
-    </div>
+    <ApiClientProvider value={desktopApiClient}>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </ApiClientProvider>
   );
 }
