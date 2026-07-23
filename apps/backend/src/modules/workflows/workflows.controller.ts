@@ -5,6 +5,7 @@ import { getPrismaClient } from '@platform/database';
 import { RedisStreamsEventBus } from '@platform/event-bus';
 import {
   LegacyApprovalRuleSource,
+  NativeRuleSource,
   NotImplementedAiDecisionProvider,
   RuleActionExecutor,
   RuleEvaluationService,
@@ -38,6 +39,7 @@ const ruleActionExecutor = new RuleActionExecutor({
 });
 const rulesEvaluationService = new RuleEvaluationService(ruleRepository, ruleActionExecutor, [
   new LegacyApprovalRuleSource(prisma),
+  new NativeRuleSource((companyId, module) => ruleRepository.loadApplicable(companyId, module)),
 ]);
 const notificationRegistry = new ChannelAdapterRegistry(new ConsoleEmailSenderAdapter());
 const notificationService = new NotificationService(notificationRegistry, prisma);

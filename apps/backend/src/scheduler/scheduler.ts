@@ -4,6 +4,7 @@ import { TenantContextStore } from '@platform/core';
 import { RedisStreamsEventBus } from '@platform/event-bus';
 import {
   LegacyApprovalRuleSource,
+  NativeRuleSource,
   NotImplementedAiDecisionProvider,
   RuleActionExecutor,
   RuleEvaluationService,
@@ -44,6 +45,7 @@ async function main(): Promise<void> {
   });
   const rulesEvaluation = new RuleEvaluationService(ruleRepository, ruleActionExecutor, [
     new LegacyApprovalRuleSource(prisma),
+    new NativeRuleSource((companyId, module) => ruleRepository.loadApplicable(companyId, module)),
   ]);
 
   const emailAdapter =

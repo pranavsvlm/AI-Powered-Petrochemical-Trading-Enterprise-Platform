@@ -38,10 +38,18 @@ const PHASE1_MODULES = [
  */
 const PHASE2_MODULES = ['events', 'rules', 'workflows', 'notifications'];
 
-export const SEED_PERMISSIONS = [...PHASE1_MODULES, ...PHASE2_MODULES].flatMap((module) =>
-  Object.values(PermissionAction).map((action) => ({
-    code: `${module}:${action.toLowerCase()}`,
-    module,
-    action,
-  })),
+/**
+ * Phase 3's Document Management surface area (doc 21). `documents.controller.ts` gates its
+ * routes on this module using the existing PermissionAction enum, including APPROVE (request-
+ * approval / decide-approval) and MANAGE_SETTINGS (folders/categories/tags administration).
+ */
+const PHASE3_MODULES = ['documents'];
+
+export const SEED_PERMISSIONS = [...PHASE1_MODULES, ...PHASE2_MODULES, ...PHASE3_MODULES].flatMap(
+  (module) =>
+    Object.values(PermissionAction).map((action) => ({
+      code: `${module}:${action.toLowerCase()}`,
+      module,
+      action,
+    })),
 );

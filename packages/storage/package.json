@@ -8,10 +8,18 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --max-warnings=0",
-    "test": "echo \"no tests yet\" && exit 0"
+    "test": "jest"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@platform/core": "workspace:*",
+    "@aws-sdk/client-s3": "^3.658.1",
+    "@aws-sdk/s3-request-presigner": "^3.658.1"
+  },
   "devDependencies": {
+    "@types/jest": "^29.5.13",
+    "@types/node": "^20.16.11",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
     "typescript": "^5.6.3"
   }
 }

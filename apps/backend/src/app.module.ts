@@ -11,6 +11,7 @@ import { EventsModule } from './modules/events/events.module';
 import { RulesModule } from './modules/rules/rules.module';
 import { WorkflowsModule } from './modules/workflows/workflows.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { DocumentsModule } from './modules/documents/documents.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     RulesModule,
     WorkflowsModule,
     NotificationsModule,
+    DocumentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

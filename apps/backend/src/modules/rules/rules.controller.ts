@@ -17,6 +17,7 @@ import { getPrismaClient } from '@platform/database';
 import { RedisStreamsEventBus } from '@platform/event-bus';
 import {
   LegacyApprovalRuleSource,
+  NativeRuleSource,
   NotImplementedAiDecisionProvider,
   RuleActionExecutor,
   RuleConflictResolver,
@@ -41,6 +42,7 @@ const actionExecutor = new RuleActionExecutor({
 });
 const evaluationService = new RuleEvaluationService(repository, actionExecutor, [
   new LegacyApprovalRuleSource(prisma),
+  new NativeRuleSource((companyId, module) => repository.loadApplicable(companyId, module)),
 ]);
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)

@@ -49,6 +49,10 @@ model Company {
   policies  Policy[]
   approvalRules ApprovalRule[]
   auditLogs AuditLog[]
+  documentFolders    DocumentFolder[]
+  documentCategories DocumentCategory[]
+  documentTags       DocumentTag[]
+  documents          Document[]
 
   @@map("companies")
   // Phase 2 back-relations intentionally omitted (Prisma does not require the
@@ -178,6 +182,10 @@ model User {
   auditLogsAsActor AuditLog[] @relation("AuditActor")
   requestedApprovals ApprovalHistory[] @relation("ApprovalRequestedBy")
   decidedApprovals   ApprovalHistory[] @relation("ApprovalDecidedBy")
+  ownedDocuments           Document[]
+  uploadedDocumentVersions DocumentVersion[]
+  documentPermissions      DocumentPermission[]
+  documentApprovalsAsApprover DocumentApproval[]
 
   @@unique([companyId, email])
   @@index([companyId])
@@ -249,6 +257,8 @@ model Role {
   permissions RolePermission[]
   users       UserRole[]
   approvalRulesAsApprover ApprovalRule[]
+  documentPermissions DocumentPermission[]
+  documentApprovalsAsApproverRole DocumentApproval[]
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -704,6 +714,7 @@ model RuleExecution {
   createdAt    DateTime @default(now()) @map("created_at")
 
   rule Rule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  documentApprovals DocumentApproval[]
 
   @@index([companyId])
   @@index([ruleId])
@@ -1025,4 +1036,210 @@ model NotificationAudit {
 
   @@index([notificationId])
   @@map("notification_audits")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Document Management (doc 21) — Phase 3
+// See docs/DOMAIN_MODEL_PHASE3.md for the canonical storage-key convention, the OCR and
+// vector-search seams, the approval-delegates-to-rules-engine decision, and the
+// exact-hash-warn-not-block duplicate detection decision.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum DocumentStatus {
+  DRAFT
+  PENDING_APPROVAL
+  PUBLISHED
+  ARCHIVED
+  DISPOSED
+}
+
+model DocumentFolder {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  name      String
+  parentId  String?  @map("parent_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company  Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent   DocumentFolder?  @relation("FolderChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children DocumentFolder[] @relation("FolderChildren")
+  documents Document[]
+
+  @@index([companyId])
+  @@index([parentId])
+  @@map("document_folders")
+}
+
+model DocumentCategory {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documents Document[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("document_categories")
+}
+
+model DocumentTag {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  company     Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignments DocumentTagAssignment[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("document_tags")
+}
+
+model DocumentTagAssignment {
+  documentId String @map("document_id")
+  tagId      String @map("tag_id")
+
+  document Document    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  tag      DocumentTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, tagId])
+  @@map("document_tag_assignments")
+}
+
+// `module` matches packages/storage's StorageModule union (finance/hr/products/quotations/
+// contracts/trading/knowledge/company) — kept as a plain String here (not a Prisma enum)
+// since packages/storage owns that list and duplicating it as a DB enum would let the two
+// drift; validated at the application layer against STORAGE_MODULES.
+model Document {
+  id          String         @id @default(uuid())
+  companyId   String         @map("company_id")
+  folderId    String?        @map("folder_id")
+  categoryId  String?        @map("category_id")
+  module      String
+  entityType  String         @map("entity_type")
+  entityId    String?        @map("entity_id")
+  title       String
+  description String?
+  status      DocumentStatus @default(DRAFT)
+  retentionPolicyName  String?   @map("retention_policy_name")
+  retentionExpiresAt   DateTime? @map("retention_expires_at")
+  ownerUserId String         @map("owner_user_id")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  // Generated tsvector column (title + description), added via raw SQL in the Phase 3
+  // migration since Prisma has no native tsvector type — see docs/DOMAIN_MODEL_PHASE3.md §5.
+  // Declared `Unsupported` purely so `prisma db pull`/introspection stays accurate; the
+  // Prisma Client never reads/writes it directly, only packages/search's raw $queryRaw does.
+  searchVector Unsupported("tsvector")? @map("search_vector")
+
+  company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  folder   DocumentFolder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  category DocumentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  owner    User              @relation(fields: [ownerUserId], references: [id])
+
+  versions    DocumentVersion[]
+  tags        DocumentTagAssignment[]
+  permissions DocumentPermission[]
+  approvals   DocumentApproval[]
+  audits      DocumentAudit[]
+  embeddings  DocumentEmbedding[]
+
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([companyId, module])
+  @@map("documents")
+}
+
+model DocumentVersion {
+  id             String   @id @default(uuid())
+  documentId     String   @map("document_id")
+  version        Int
+  storageKey     String   @map("storage_key")
+  filename       String
+  contentType    String   @map("content_type")
+  sizeBytes      Int      @map("size_bytes")
+  sha256Hash     String   @map("sha256_hash")
+  uploadedByUserId String @map("uploaded_by_user_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  uploadedBy User     @relation(fields: [uploadedByUserId], references: [id])
+
+  @@unique([documentId, version])
+  @@index([documentId])
+  @@index([sha256Hash])
+  @@map("document_versions")
+}
+
+model DocumentPermission {
+  id         String           @id @default(uuid())
+  documentId String           @map("document_id")
+  roleId     String?          @map("role_id")
+  userId     String?          @map("user_id")
+  action     PermissionAction
+  grantedAt  DateTime         @default(now()) @map("granted_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  role     Role?    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user     User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("document_permissions")
+}
+
+// Approval decisions are resolved by packages/rules-engine (RulesEngineClient.evaluateApproval),
+// never reimplemented here — ruleExecutionId links back to the RuleExecution that produced the
+// decision. See docs/DOMAIN_MODEL_PHASE3.md §6.
+model DocumentApproval {
+  id              String         @id @default(uuid())
+  documentId      String         @map("document_id")
+  ruleExecutionId String?        @map("rule_execution_id")
+  status          ApprovalStatus @default(PENDING)
+  approverUserId  String?        @map("approver_user_id")
+  approverRoleId  String?        @map("approver_role_id")
+  decidedAt       DateTime?      @map("decided_at")
+  comment         String?
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  document      Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  ruleExecution RuleExecution? @relation(fields: [ruleExecutionId], references: [id], onDelete: SetNull)
+  approverUser  User?          @relation(fields: [approverUserId], references: [id])
+  approverRole  Role?          @relation(fields: [approverRoleId], references: [id])
+
+  @@index([documentId])
+  @@map("document_approvals")
+}
+
+model DocumentAudit {
+  id          String   @id @default(uuid())
+  documentId  String   @map("document_id")
+  action      String
+  actorUserId String?  @map("actor_user_id")
+  detail      Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("document_audits")
+}
+
+// Schema exists now (future-proofing), unused in Phase 3 — see docs/DOMAIN_MODEL_PHASE3.md §8.
+// Wired up once packages/search's VectorSearchPort gets a real implementation.
+model DocumentEmbedding {
+  id         String   @id @default(uuid())
+  documentId String   @map("document_id")
+  chunkIndex Int      @map("chunk_index")
+  chunkText  String   @map("chunk_text")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("document_embeddings")
 }

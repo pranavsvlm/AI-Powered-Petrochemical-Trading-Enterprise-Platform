@@ -77,6 +77,10 @@ export const TENANT_SCOPED_MODELS = [
   'WorkflowExecution',
   'Notification',
   'NotificationGroup',
+  'Document',
+  'DocumentFolder',
+  'DocumentCategory',
+  'DocumentTag',
 ] as const;
 // Note: AuditLog is intentionally NOT tenant-scoped by the Prisma extension — it has a
 // nullable company_id (platform-level events have none) and its company_id is set
