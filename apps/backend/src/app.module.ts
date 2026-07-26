@@ -16,6 +16,9 @@ import { CustomersModule } from './modules/customers/customers.module';
 import { ProductsModule } from './modules/products/products.module';
 import { QuotationsModule } from './modules/quotations/quotations.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
+import { ProcurementModule } from './modules/procurement/procurement.module';
+import { AccountingModule } from './modules/accounting/accounting.module';
 
 @Module({
   imports: [
@@ -33,6 +36,9 @@ import { OrdersModule } from './modules/orders/orders.module';
     ProductsModule,
     QuotationsModule,
     OrdersModule,
+    InventoryModule,
+    ProcurementModule,
+    AccountingModule,
   ],
   controllers: [AppController],
   providers: [AppService],

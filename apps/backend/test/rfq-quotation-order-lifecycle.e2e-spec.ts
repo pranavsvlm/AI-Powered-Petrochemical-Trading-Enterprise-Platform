@@ -22,6 +22,8 @@ import {
 } from '@platform/rules-engine';
 import { CustomerService, type CustomerAuditReader } from '@modules/customers';
 import { ProductService } from '@modules/products';
+import { InventoryService } from '@modules/inventory';
+import { ChartOfAccountsService, InvoiceService } from '@modules/accounting';
 import {
   RfqService,
   QuotationService,
@@ -29,7 +31,14 @@ import {
   type CustomerLookupPort,
   type ProductLookupPort,
 } from '@modules/quotations';
-import { OrderService, type QuotationLookupPort } from '@modules/orders';
+import {
+  OrderService,
+  type QuotationLookupPort,
+  type InventoryReservePort,
+  type InventoryReleasePort,
+  type InventoryCommitPort,
+  type InvoicingPort,
+} from '@modules/orders';
 
 const db = getPrismaClient();
 const rawDb = new PrismaClient();
@@ -51,6 +60,8 @@ function asCompany<T>(companyId: string, userId: string, fn: () => Promise<T>): 
 interface Services {
   customerService: CustomerService;
   productService: ProductService;
+  inventoryService: InventoryService;
+  chartOfAccountsService: ChartOfAccountsService;
   rfqService: RfqService;
   quotationService: QuotationService;
   orderService: OrderService;
@@ -79,6 +90,9 @@ function buildServices(): Services {
 
   const customerService = new CustomerService(db, approvalEvaluator, eventBus, audit, auditReader);
   const productService = new ProductService(db, approvalEvaluator, eventBus, audit);
+  const inventoryService = new InventoryService(db, eventBus, audit);
+  const invoiceService = new InvoiceService(db, eventBus, audit);
+  const chartOfAccountsService = new ChartOfAccountsService(db, audit);
 
   // Both call the owning service's own tenant-scoped getById — the same wiring
   // apps/backend/src/modules/{quotations,orders}/*.module.ts use in production, and the thing
@@ -108,6 +122,21 @@ function buildServices(): Services {
       await quotationService.convertToOrder(quotationId, actorUserId);
     },
   };
+  const inventoryReserve: InventoryReservePort = {
+    reserve: (tx, companyId, orderId, lines, warehouseId) =>
+      inventoryService.reserve(tx, companyId, orderId, lines, warehouseId),
+  };
+  const inventoryRelease: InventoryReleasePort = {
+    release: (companyId, orderId) => inventoryService.release(companyId, orderId),
+  };
+  const inventoryCommit: InventoryCommitPort = {
+    commit: (companyId, orderId) => inventoryService.commit(companyId, orderId),
+    reverseCommit: (companyId, orderId) => inventoryService.reverseCommit(companyId, orderId),
+  };
+  const invoicing: InvoicingPort = {
+    generateInvoiceForOrder: (order, actorUserId) =>
+      invoiceService.generateInvoiceForOrder(order, actorUserId),
+  };
   const orderService = new OrderService(
     db,
     approvalEvaluator,
@@ -116,11 +145,17 @@ function buildServices(): Services {
     quotationLookup,
     customerLookup,
     productLookup,
+    inventoryReserve,
+    inventoryRelease,
+    inventoryCommit,
+    invoicing,
   );
 
   return {
     customerService,
     productService,
+    inventoryService,
+    chartOfAccountsService,
     rfqService,
     quotationService,
     orderService,
@@ -199,10 +234,43 @@ describe('RFQ -> Quotation -> Order lifecycle (live Postgres + Redis)', () => {
         userId,
       ),
     );
+
+    // Phase 5: order creation now atomically reserves stock, so a default warehouse with
+    // enough on-hand quantity must exist before createFromQuotation/createDirect can succeed.
+    const warehouse = await asCompany(companyId, userId, () =>
+      services.inventoryService.createWarehouse(
+        companyId,
+        { code: 'WH-TRADE', name: 'Trade Test Warehouse', isDefault: true },
+        userId,
+      ),
+    );
+    await asCompany(companyId, userId, () =>
+      services.inventoryService.recordReceipt({
+        companyId,
+        productId,
+        warehouseId: warehouse.id,
+        quantity: 1000,
+        entityType: 'Test',
+        entityId: 'seed',
+      }),
+    );
+    await asCompany(companyId, userId, () =>
+      services.chartOfAccountsService.seedDefaultChart(companyId, userId),
+    );
   });
 
   afterAll(async () => {
     await withoutTenant(async () => {
+      await rawDb.payment.deleteMany({ where: { companyId } });
+      await rawDb.invoiceItem.deleteMany({ where: { invoice: { companyId } } });
+      await rawDb.invoice.deleteMany({ where: { companyId } });
+      await rawDb.journalLine.deleteMany({ where: { journal: { companyId } } });
+      await rawDb.journal.deleteMany({ where: { companyId } });
+      await rawDb.chartOfAccount.deleteMany({ where: { companyId } });
+      await rawDb.stockReservation.deleteMany({ where: { companyId } });
+      await rawDb.inventoryMovement.deleteMany({ where: { companyId } });
+      await rawDb.inventoryItem.deleteMany({ where: { companyId } });
+      await rawDb.warehouse.deleteMany({ where: { companyId } });
       await rawDb.orderLineItem.deleteMany({ where: { order: { companyId } } });
       await rawDb.order.deleteMany({ where: { companyId } });
       await rawDb.quotationLineItem.deleteMany({

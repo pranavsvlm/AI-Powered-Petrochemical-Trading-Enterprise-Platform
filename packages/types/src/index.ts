@@ -90,6 +90,20 @@ export const TENANT_SCOPED_MODELS = [
   'Quotation',
   'Order',
   'ApprovalRequest',
+  'Warehouse',
+  'InventoryItem',
+  'InventoryMovement',
+  'StockReservation',
+  'StockAdjustment',
+  'Supplier',
+  'PurchaseRequisition',
+  'PurchaseOrder',
+  'GoodsReceipt',
+  'ChartOfAccount',
+  'Journal',
+  'Invoice',
+  'Payment',
+  'SupplierBill',
 ] as const;
 // Note: AuditLog is intentionally NOT tenant-scoped by the Prisma extension — it has a
 // nullable company_id (platform-level events have none) and its company_id is set
@@ -126,6 +140,8 @@ export interface AttributeContext {
   orderValue?: number;
   currency?: string;
   businessHours?: boolean;
+  poValue?: number;
+  supplierId?: string;
   [key: string]: string | number | boolean | undefined;
 }
 

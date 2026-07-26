@@ -3,7 +3,8 @@
 // Phase 2: Platform Backbone (Event Bus, Rules Engine, Workflow Engine, Notification Center).
 // Phase 3: Storage, Documents & Search.
 // Phase 4: Core Trading Domain (Customers, Products, RFQ -> Quotation -> Order).
-// See docs/DOMAIN_MODEL_PHASE{1,2,3,4}.md for ratified domain decisions.
+// Phase 5: Inventory, Procurement & Finance.
+// See docs/DOMAIN_MODEL_PHASE{1,2,3,4,5}.md for ratified domain decisions.
 
 datasource db {
   provider = "postgresql"
@@ -64,6 +65,20 @@ model Company {
   quotations         Quotation[]
   orders             Order[]
   approvalRequests   ApprovalRequest[]
+  warehouses         Warehouse[]
+  inventoryItems     InventoryItem[]
+  inventoryMovements InventoryMovement[]
+  stockReservations  StockReservation[]
+  stockAdjustments   StockAdjustment[]
+  suppliers          Supplier[]
+  purchaseRequisitions PurchaseRequisition[]
+  purchaseOrders     PurchaseOrder[]
+  goodsReceipts      GoodsReceipt[]
+  chartOfAccounts    ChartOfAccount[]
+  journals           Journal[]
+  invoices           Invoice[]
+  payments           Payment[]
+  supplierBills      SupplierBill[]
 
   @@map("companies")
   // Phase 2 back-relations intentionally omitted (Prisma does not require the
@@ -146,6 +161,7 @@ model Branch {
   updatedAt      DateTime   @updatedAt @map("updated_at")
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  warehouses Warehouse[]
 
   @@index([companyId])
   @@map("branches")
@@ -1457,6 +1473,10 @@ model Product {
   rfqLineItems       RfqLineItem[]
   quotationLineItems QuotationLineItem[]
   orderLineItems     OrderLineItem[]
+  inventoryItems     InventoryItem[]
+  purchaseRequisitionItems PurchaseRequisitionItem[]
+  purchaseOrderItems PurchaseOrderItem[]
+  invoiceItems       InvoiceItem[]
 
   @@unique([companyId, sku])
   @@index([companyId, status])
@@ -1732,6 +1752,8 @@ model Order {
   customer  Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
   quotation Quotation?      @relation(fields: [quotationId], references: [id], onDelete: SetNull)
   lineItems OrderLineItem[]
+  reservations StockReservation[]
+  invoice   Invoice?
 
   @@unique([companyId, orderNumber])
   @@index([companyId, status])
@@ -1739,19 +1761,582 @@ model Order {
   @@map("orders")
 }
 
+// warehouseId is nullable at the schema level (a pre-Phase-5 order row would have none), but
+// every Phase-5-created line item always resolves one (the caller's choice or the company's
+// default warehouse) before the reservation step runs — see docs/DOMAIN_MODEL_PHASE5.md.
 model OrderLineItem {
   id                String        @id @default(uuid())
   orderId           String        @map("order_id")
   productId         String        @map("product_id")
+  warehouseId       String?       @map("warehouse_id")
   quantity          Decimal
   uom               UnitOfMeasure
   unitPrice         Decimal       @map("unit_price")
   lineTotal         Decimal       @map("line_total")
   fulfilledQuantity Decimal       @default(0) @map("fulfilled_quantity")
 
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product    @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  reservation StockReservation?
 
   @@index([orderId])
   @@map("order_line_items")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Inventory Management (doc 16) — Phase 5
+// See docs/DOMAIN_MODEL_PHASE5.md for the ratified warehouse-hierarchy collapse, the atomic
+// reservation primitive, and why InventoryMovement (unlike OrderLineItem/QuotationLineItem) is
+// tenant-scoped in its own right rather than a pure child.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum WarehouseStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Warehouse {
+  id           String          @id @default(uuid())
+  companyId    String          @map("company_id")
+  branchId     String?         @map("branch_id")
+  code         String
+  name         String
+  addressLine1 String?         @map("address_line1")
+  city         String?
+  country      String?
+  isDefault    Boolean         @default(false) @map("is_default")
+  status       WarehouseStatus @default(ACTIVE)
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branch  Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  inventoryItems InventoryItem[]
+  orderLineItems OrderLineItem[]
+  goodsReceipts  GoodsReceipt[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("warehouses")
+}
+
+model InventoryItem {
+  id               String   @id @default(uuid())
+  companyId        String   @map("company_id")
+  productId        String   @map("product_id")
+  warehouseId      String   @map("warehouse_id")
+  quantityOnHand   Decimal  @default(0) @map("quantity_on_hand")
+  quantityReserved Decimal  @default(0) @map("quantity_reserved")
+  reorderPoint     Decimal? @map("reorder_point")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+
+  batches      InventoryBatch[]
+  movements    InventoryMovement[]
+  reservations StockReservation[]
+  adjustments  StockAdjustment[]
+
+  @@unique([companyId, productId, warehouseId])
+  @@index([companyId, warehouseId])
+  @@map("inventory_items")
+}
+
+// Pure child of InventoryItem — batch/lot tracking (doc 16), created at goods-receipt time.
+// COA/SDS/MSDS links reuse Document.entityType='inventoryBatch' polymorphism (Phase 3/4
+// precedent), not new fields here.
+model InventoryBatch {
+  id              String    @id @default(uuid())
+  inventoryItemId String    @map("inventory_item_id")
+  batchNumber     String    @map("batch_number")
+  quantity        Decimal
+  expiryDate      DateTime? @map("expiry_date")
+  receivedAt      DateTime  @default(now()) @map("received_at")
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+  @@map("inventory_batches")
+}
+
+// RECEIPT: goods receipt increases quantityOnHand. DISPATCH: stock permanently allocated away
+// from available inventory at order-CONFIRMATION commit time (not physical warehouse dispatch,
+// which stays OrderLineItem.fulfilledQuantity/fulfillLine() — see docs/DOMAIN_MODEL_PHASE5.md).
+// ADJUSTMENT: manual StockAdjustment. RESERVATION_RELEASE: an ACTIVE reservation released
+// without ever being committed (e.g. order cancelled). REVERSAL: the saga's compensating action
+// undoing a DISPATCH when invoice generation fails after inventory was committed.
+enum InventoryMovementType {
+  RECEIPT
+  DISPATCH
+  ADJUSTMENT
+  RESERVATION_RELEASE
+  REVERSAL
+}
+
+// A real tenant-scoped aggregate (not a pure child like OrderLineItem) — an append-only ledger
+// meant to be queried directly ("stock-card report for company X"), same shape as
+// ApprovalRequest's polymorphic entityType/entityId. See docs/DOMAIN_MODEL_PHASE5.md.
+model InventoryMovement {
+  id              String                @id @default(uuid())
+  companyId       String                @map("company_id")
+  inventoryItemId String                @map("inventory_item_id")
+  movementType    InventoryMovementType @map("movement_type")
+  quantity        Decimal
+  entityType      String                @map("entity_type")
+  entityId        String?               @map("entity_id")
+  note            String?
+  createdAt       DateTime              @default(now()) @map("created_at")
+
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, inventoryItemId])
+  @@index([companyId, entityType, entityId])
+  @@map("inventory_movements")
+}
+
+enum StockReservationStatus {
+  ACTIVE
+  RELEASED
+  COMMITTED
+}
+
+// One reservation per order line item (no split/partial reservations in Phase 5) — the row the
+// atomic conditional UPDATE in InventoryRepository.atomicReserve stamps directly.
+model StockReservation {
+  id              String                 @id @default(uuid())
+  companyId       String                 @map("company_id")
+  orderId         String                 @map("order_id")
+  orderLineItemId String                 @unique @map("order_line_item_id")
+  inventoryItemId String                 @map("inventory_item_id")
+  quantity        Decimal
+  status          StockReservationStatus @default(ACTIVE)
+  createdAt       DateTime               @default(now()) @map("created_at")
+  updatedAt       DateTime               @updatedAt @map("updated_at")
+
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderLineItem OrderLineItem @relation(fields: [orderLineItemId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, orderId])
+  @@index([companyId, status])
+  @@map("stock_reservations")
+}
+
+model StockAdjustment {
+  id              String   @id @default(uuid())
+  companyId       String   @map("company_id")
+  inventoryItemId String   @map("inventory_item_id")
+  quantityDelta   Decimal  @map("quantity_delta")
+  reason          String
+  actorUserId     String   @map("actor_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, inventoryItemId])
+  @@map("stock_adjustments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Procurement Management (doc 17) — Phase 5
+// See docs/DOMAIN_MODEL_PHASE5.md for the ratified scope — SupplierRFQ/SupplierQuotation,
+// SupplierCertification, SupplierContract, and a standalone QualityInspection are deferred.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum SupplierStatus {
+  PROSPECT
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+model Supplier {
+  id               String         @id @default(uuid())
+  companyId        String         @map("company_id")
+  supplierCode     String         @map("supplier_code")
+  legalName        String         @map("legal_name")
+  tradeName        String?        @map("trade_name")
+  taxNumber        String?        @map("tax_number")
+  country          String
+  city             String?
+  address          String?
+  currency         String
+  paymentTermsDays Int?           @map("payment_terms_days")
+  status           SupplierStatus @default(PROSPECT)
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  contacts       SupplierContact[]
+  purchaseOrders PurchaseOrder[]
+  supplierBills  SupplierBill[]
+
+  @@unique([companyId, supplierCode])
+  @@index([companyId, status])
+  @@map("suppliers")
+}
+
+// Exact field-shape mirror of Phase 4's Customer + Contact.
+model SupplierContact {
+  id         String   @id @default(uuid())
+  supplierId String   @map("supplier_id")
+  firstName  String   @map("first_name")
+  lastName   String   @map("last_name")
+  email      String?
+  phone      String?
+  jobTitle   String?  @map("job_title")
+  isPrimary  Boolean  @default(false) @map("is_primary")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId])
+  @@map("supplier_contacts")
+}
+
+enum PurchaseRequisitionStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CONVERTED
+  CANCELLED
+}
+
+model PurchaseRequisition {
+  id                String                    @id @default(uuid())
+  companyId         String                    @map("company_id")
+  requisitionNumber String                    @map("requisition_number")
+  requestedByUserId String                    @map("requested_by_user_id")
+  status            PurchaseRequisitionStatus @default(DRAFT)
+  notes             String?
+  createdAt         DateTime                  @default(now()) @map("created_at")
+  updatedAt         DateTime                  @updatedAt @map("updated_at")
+
+  company        Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lineItems      PurchaseRequisitionItem[]
+  purchaseOrders PurchaseOrder[]
+
+  @@unique([companyId, requisitionNumber])
+  @@index([companyId, status])
+  @@map("purchase_requisitions")
+}
+
+model PurchaseRequisitionItem {
+  id                 String        @id @default(uuid())
+  requisitionId      String        @map("requisition_id")
+  productId          String        @map("product_id")
+  quantity           Decimal
+  uom                UnitOfMeasure
+  estimatedUnitPrice Decimal?      @map("estimated_unit_price")
+
+  requisition PurchaseRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  product     Product             @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([requisitionId])
+  @@map("purchase_requisition_items")
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CLOSED
+  CANCELLED
+}
+
+// requisitionId is nullable — a PO may be created directly, without a prior Requisition,
+// mirroring Order.quotationId's precedent.
+model PurchaseOrder {
+  id              String              @id @default(uuid())
+  companyId       String              @map("company_id")
+  poNumber        String              @map("po_number")
+  supplierId      String              @map("supplier_id")
+  requisitionId   String?             @map("requisition_id")
+  status          PurchaseOrderStatus @default(DRAFT)
+  currency        String
+  subtotal        Decimal             @default(0)
+  totalAmount     Decimal             @default(0) @map("total_amount")
+  createdByUserId String              @map("created_by_user_id")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  company       Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier      Supplier             @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  requisition   PurchaseRequisition? @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
+  lineItems     PurchaseOrderItem[]
+  goodsReceipts GoodsReceipt[]
+  supplierBills SupplierBill[]
+
+  @@unique([companyId, poNumber])
+  @@index([companyId, status])
+  @@index([companyId, supplierId])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id               String        @id @default(uuid())
+  purchaseOrderId  String        @map("purchase_order_id")
+  productId        String        @map("product_id")
+  quantity         Decimal
+  uom              UnitOfMeasure
+  unitPrice        Decimal       @map("unit_price")
+  lineTotal        Decimal       @map("line_total")
+  receivedQuantity Decimal       @default(0) @map("received_quantity")
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  goodsReceiptItems GoodsReceiptItem[]
+
+  @@index([purchaseOrderId])
+  @@map("purchase_order_items")
+}
+
+enum GoodsReceiptStatus {
+  DRAFT
+  COMPLETED
+}
+
+model GoodsReceipt {
+  id               String             @id @default(uuid())
+  companyId        String             @map("company_id")
+  receiptNumber    String             @map("receipt_number")
+  purchaseOrderId  String             @map("purchase_order_id")
+  warehouseId      String             @map("warehouse_id")
+  status           GoodsReceiptStatus @default(DRAFT)
+  receivedByUserId String             @map("received_by_user_id")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  company       Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  purchaseOrder PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  warehouse     Warehouse          @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  lineItems     GoodsReceiptItem[]
+  supplierBills SupplierBill[]
+
+  @@unique([companyId, receiptNumber])
+  @@index([companyId, purchaseOrderId])
+  @@map("goods_receipts")
+}
+
+// Folds doc 17's QualityInspection in as a per-line result rather than a separate entity — see
+// docs/DOMAIN_MODEL_PHASE5.md. Only PASSED lines feed InventoryBatch/InventoryMovement(RECEIPT)/
+// InventoryItem.quantityOnHand.
+enum InspectionResult {
+  PENDING
+  PASSED
+  FAILED
+}
+
+model GoodsReceiptItem {
+  id                  String           @id @default(uuid())
+  goodsReceiptId      String           @map("goods_receipt_id")
+  purchaseOrderItemId String           @map("purchase_order_item_id")
+  quantityReceived    Decimal          @map("quantity_received")
+  inspectionResult    InspectionResult @default(PASSED) @map("inspection_result")
+  batchNumber         String?          @map("batch_number")
+  expiryDate          DateTime?        @map("expiry_date")
+
+  goodsReceipt      GoodsReceipt      @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  purchaseOrderItem PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id], onDelete: Restrict)
+
+  @@index([goodsReceiptId])
+  @@map("goods_receipt_items")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Accounting & Finance (doc 14) — Phase 5
+// See docs/DOMAIN_MODEL_PHASE5.md for the double-entry invariant, the money-as-plain-number
+// decision, and why Trial Balance/P&L are computed reports rather than stored entities.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+model ChartOfAccount {
+  id          String      @id @default(uuid())
+  companyId   String      @map("company_id")
+  accountCode String      @map("account_code")
+  name        String
+  accountType AccountType @map("account_type")
+  isActive    Boolean     @default(true) @map("is_active")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  journalLines JournalLine[]
+
+  @@unique([companyId, accountCode])
+  @@index([companyId, accountType])
+  @@map("chart_of_accounts")
+}
+
+// sourceType/sourceId (e.g. 'Invoice'|'SupplierBill'|'Manual') is a polymorphic pointer back to
+// whatever business event posted this journal — same String-not-enum treatment Document.module
+// got, since the set of possible sources grows with the platform, not with this schema.
+// JournalService.post() enforces sum(debit) == sum(credit) via domain/journal-balance.ts before
+// the row is ever created.
+model Journal {
+  id              String   @id @default(uuid())
+  companyId       String   @map("company_id")
+  journalNumber   String   @map("journal_number")
+  journalDate     DateTime @map("journal_date")
+  memo            String?
+  sourceType      String   @map("source_type")
+  sourceId        String?  @map("source_id")
+  createdByUserId String?  @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  company Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lines   JournalLine[]
+
+  @@unique([companyId, journalNumber])
+  @@index([companyId, journalDate])
+  @@index([companyId, sourceType, sourceId])
+  @@map("journals")
+}
+
+model JournalLine {
+  id          String   @id @default(uuid())
+  journalId   String   @map("journal_id")
+  accountId   String   @map("account_id")
+  debit       Decimal  @default(0)
+  credit      Decimal  @default(0)
+  description String?
+
+  journal Journal        @relation(fields: [journalId], references: [id], onDelete: Cascade)
+  account ChartOfAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([journalId])
+  @@index([accountId])
+  @@map("journal_lines")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+// One invoice per order (no split invoicing in Phase 5) — generated by
+// InvoiceService.generateInvoiceForOrder, the saga's step 3. customerId is denormalized from
+// the Order at generation time so AR reports don't need to join back through Order.
+model Invoice {
+  id            String        @id @default(uuid())
+  companyId     String        @map("company_id")
+  invoiceNumber String        @map("invoice_number")
+  orderId       String        @unique @map("order_id")
+  customerId    String        @map("customer_id")
+  status        InvoiceStatus @default(ISSUED)
+  currency      String
+  subtotal      Decimal       @default(0)
+  totalAmount   Decimal       @default(0) @map("total_amount")
+  amountPaid    Decimal       @default(0) @map("amount_paid")
+  issuedAt      DateTime      @default(now()) @map("issued_at")
+  dueAt         DateTime?     @map("due_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  company Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order   Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  items   InvoiceItem[]
+
+  @@unique([companyId, invoiceNumber])
+  @@index([companyId, status])
+  @@index([companyId, customerId])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String   @id @default(uuid())
+  invoiceId   String   @map("invoice_id")
+  productId   String   @map("product_id")
+  description String?
+  quantity    Decimal
+  unitPrice   Decimal  @map("unit_price")
+  lineTotal   Decimal  @map("line_total")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+// entityType/entityId is a genuinely polymorphic pointer (only 'Invoice' is written in Phase 5,
+// ready for 'SupplierBill' AP-side vendor payments later without a migration) — deliberately no
+// relation/FK on entityId, exactly like ApprovalRequest/InventoryMovement's polymorphism.
+model Payment {
+  id              String   @id @default(uuid())
+  companyId       String   @map("company_id")
+  entityType      String   @map("entity_type")
+  entityId        String   @map("entity_id")
+  amount          Decimal
+  currency        String
+  paidAt          DateTime @default(now()) @map("paid_at")
+  method          String?
+  reference       String?
+  createdByUserId String?  @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, entityType, entityId])
+  @@map("payments")
+}
+
+enum SupplierBillStatus {
+  ISSUED
+  PAID
+  VOID
+}
+
+// Kept minimal — one row, no separate line-item breakout, to control scope (see
+// docs/DOMAIN_MODEL_PHASE5.md).
+model SupplierBill {
+  id              String             @id @default(uuid())
+  companyId       String             @map("company_id")
+  billNumber      String             @map("bill_number")
+  purchaseOrderId String             @map("purchase_order_id")
+  supplierId      String             @map("supplier_id")
+  goodsReceiptId  String?            @map("goods_receipt_id")
+  status          SupplierBillStatus @default(ISSUED)
+  currency        String
+  totalAmount     Decimal            @default(0) @map("total_amount")
+  amountPaid      Decimal            @default(0) @map("amount_paid")
+  billDate        DateTime           @default(now()) @map("bill_date")
+  dueAt           DateTime?          @map("due_at")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  supplier      Supplier      @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  goodsReceipt  GoodsReceipt? @relation(fields: [goodsReceiptId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, billNumber])
+  @@index([companyId, status])
+  @@index([companyId, supplierId])
+  @@map("supplier_bills")
 }

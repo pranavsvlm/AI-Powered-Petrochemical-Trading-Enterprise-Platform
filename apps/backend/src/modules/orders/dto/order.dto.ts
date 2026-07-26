@@ -23,6 +23,10 @@ export class CreateOrderFromQuotationDto {
   @IsString()
   @IsNotEmpty()
   quotationId!: string;
+
+  @IsOptional()
+  @IsString()
+  warehouseId?: string;
 }
 
 export class OrderLineItemDto {
@@ -58,6 +62,10 @@ export class CreateOrderDirectDto {
   @IsOptional()
   @IsIn(INCOTERMS)
   incoterm?: (typeof INCOTERMS)[number];
+
+  @IsOptional()
+  @IsString()
+  warehouseId?: string;
 
   @IsArray()
   @ArrayMinSize(1)

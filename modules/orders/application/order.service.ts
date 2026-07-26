@@ -3,6 +3,7 @@ import { AuditEventType } from '@platform/core';
 import { EVENT_TYPES } from '@platform/event-bus';
 import type {
   TenantScopedPrismaClient,
+  TenantScopedTransactionClient,
   Order,
   OrderStatus,
   UnitOfMeasure,
@@ -13,7 +14,11 @@ import {
   assertOrderTransition,
   computeAggregateFulfillmentStatus,
 } from '../domain/order-lifecycle';
-import { OrderRepository, type OrderLineItemInput } from '../infrastructure/order.repository';
+import {
+  OrderRepository,
+  type OrderLineItemInput,
+  type OrderWithLineItems,
+} from '../infrastructure/order.repository';
 
 export interface OrderAuditWriter {
   record(entry: {
@@ -88,11 +93,55 @@ export interface ProductLookupPort {
   getById(productId: string): Promise<{ id: string }>;
 }
 
+/**
+ * Published by @modules/inventory, satisfied by InventoryService.reserve — called inside this
+ * service's own `db.$transaction(...)` so the reservation writes participate in the same
+ * atomic unit as the order-creation write. See docs/DOMAIN_MODEL_PHASE5.md.
+ */
+export interface InventoryReservePort {
+  reserve(
+    tx: TenantScopedTransactionClient,
+    companyId: string,
+    orderId: string,
+    lines: Array<{ orderLineItemId: string; productId: string; quantity: number }>,
+    warehouseId?: string,
+  ): Promise<void>;
+}
+
+/** Published by @modules/inventory, satisfied by InventoryService.release. Only called from cancel() while still PENDING_CONFIRMATION. */
+export interface InventoryReleasePort {
+  release(companyId: string, orderId: string): Promise<void>;
+}
+
+/** Published by @modules/inventory, satisfied by InventoryService — the confirmation saga's step 2/compensation. */
+export interface InventoryCommitPort {
+  commit(companyId: string, orderId: string): Promise<void>;
+  reverseCommit(companyId: string, orderId: string): Promise<void>;
+}
+
+/** The order snapshot InvoicingPort needs — passed by value, see @modules/accounting's InvoiceService for why. */
+export interface OrderSnapshotForInvoicing {
+  id: string;
+  companyId: string;
+  orderNumber: string;
+  customerId: string;
+  currency: string;
+  subtotal: number;
+  totalAmount: number;
+  lineItems: Array<{ productId: string; quantity: number; unitPrice: number; lineTotal: number }>;
+}
+
+/** Published by @modules/accounting, satisfied by InvoiceService.generateInvoiceForOrder — the confirmation saga's step 3. */
+export interface InvoicingPort {
+  generateInvoiceForOrder(order: OrderSnapshotForInvoicing, actorUserId: string): Promise<void>;
+}
+
 export interface CreateOrderDirectInput {
   orderNumber: string;
   customerId: string;
   currency: string;
   incoterm?: Incoterm;
+  warehouseId?: string;
   lineItems: Array<{ productId: string; quantity: number; uom: UnitOfMeasure; unitPrice: number }>;
 }
 
@@ -115,6 +164,10 @@ export class OrderService {
     private readonly quotations: QuotationLookupPort,
     private readonly customers: CustomerLookupPort,
     private readonly products: ProductLookupPort,
+    private readonly inventoryReserve: InventoryReservePort,
+    private readonly inventoryRelease: InventoryReleasePort,
+    private readonly inventoryCommit: InventoryCommitPort,
+    private readonly invoicing: InvoicingPort,
   ) {
     this.repo = new OrderRepository(db);
   }
@@ -125,6 +178,7 @@ export class OrderService {
     quotationId: string,
     actorUserId: string,
     ipAddress?: string | null,
+    warehouseId?: string,
   ): Promise<Order> {
     const quotation = await this.quotations.getForOrderCreation(quotationId);
     const currentVersion = quotation.versions.find(
@@ -142,16 +196,33 @@ export class OrderService {
     }));
     const totalAmount = lineItems.reduce((sum, l) => sum + l.lineTotal, 0);
 
-    const order = await this.repo.create({
-      companyId,
-      orderNumber,
-      customerId: quotation.customerId,
-      quotationId,
-      currency: quotation.currency,
-      createdByUserId: actorUserId,
-      lineItems,
-      subtotal: totalAmount,
-      totalAmount,
+    const order = await this.db.$transaction(async (tx) => {
+      const created = await this.repo.create(
+        {
+          companyId,
+          orderNumber,
+          customerId: quotation.customerId,
+          quotationId,
+          currency: quotation.currency,
+          createdByUserId: actorUserId,
+          lineItems,
+          subtotal: totalAmount,
+          totalAmount,
+        },
+        tx,
+      );
+      await this.inventoryReserve.reserve(
+        tx,
+        companyId,
+        created.id,
+        created.lineItems.map((li) => ({
+          orderLineItemId: li.id,
+          productId: li.productId,
+          quantity: Number(li.quantity),
+        })),
+        warehouseId,
+      );
+      return created;
     });
 
     await this.quotations.markConverted(quotationId, actorUserId);
@@ -192,16 +263,33 @@ export class OrderService {
     }));
     const totalAmount = lineItems.reduce((sum, l) => sum + l.lineTotal, 0);
 
-    const order = await this.repo.create({
-      companyId,
-      orderNumber: input.orderNumber,
-      customerId: input.customerId,
-      currency: input.currency,
-      incoterm: input.incoterm,
-      createdByUserId: actorUserId,
-      lineItems,
-      subtotal: totalAmount,
-      totalAmount,
+    const order = await this.db.$transaction(async (tx) => {
+      const created = await this.repo.create(
+        {
+          companyId,
+          orderNumber: input.orderNumber,
+          customerId: input.customerId,
+          currency: input.currency,
+          incoterm: input.incoterm,
+          createdByUserId: actorUserId,
+          lineItems,
+          subtotal: totalAmount,
+          totalAmount,
+        },
+        tx,
+      );
+      await this.inventoryReserve.reserve(
+        tx,
+        companyId,
+        created.id,
+        created.lineItems.map((li) => ({
+          orderLineItemId: li.id,
+          productId: li.productId,
+          quantity: Number(li.quantity),
+        })),
+        input.warehouseId,
+      );
+      return created;
     });
 
     await this.audit.record({
@@ -222,10 +310,58 @@ export class OrderService {
     return order;
   }
 
-  async getById(id: string): Promise<Order> {
+  async getById(id: string): Promise<OrderWithLineItems> {
     const order = await this.repo.findById(id);
     if (!order) throw new NotFoundException('Order not found.');
     return order;
+  }
+
+  private toInvoiceSnapshot(order: OrderWithLineItems): OrderSnapshotForInvoicing {
+    return {
+      id: order.id,
+      companyId: order.companyId,
+      orderNumber: order.orderNumber,
+      customerId: order.customerId,
+      currency: order.currency,
+      subtotal: Number(order.subtotal),
+      totalAmount: Number(order.totalAmount),
+      lineItems: order.lineItems.map((li) => ({
+        productId: li.productId,
+        quantity: Number(li.quantity),
+        unitPrice: Number(li.unitPrice),
+        lineTotal: Number(li.lineTotal),
+      })),
+    };
+  }
+
+  /**
+   * The confirmation saga (docs/DOMAIN_MODEL_PHASE5.md): commit inventory (converting this
+   * order's ACTIVE reservations to a permanent dispatch), then generate the AR invoice. If
+   * invoice generation fails, the inventory commit is compensated (reversed) and the error
+   * re-thrown — Order.status itself is never rolled back; CONFIRMED + reverted-inventory +
+   * no-invoice is a detectable, reconcilable state, not silently swallowed.
+   */
+  private async runConfirmationSaga(order: OrderWithLineItems, actorUserId: string): Promise<void> {
+    await this.inventoryCommit.commit(order.companyId, order.id);
+    try {
+      await this.invoicing.generateInvoiceForOrder(this.toInvoiceSnapshot(order), actorUserId);
+    } catch (err) {
+      await this.inventoryCommit.reverseCommit(order.companyId, order.id);
+      throw err;
+    }
+  }
+
+  /**
+   * The documented manual-retry path for the saga's one known failure mode (order CONFIRMED,
+   * inventory reverted, no Invoice) — see docs/DOMAIN_MODEL_PHASE5.md. Only OrderService holds
+   * both the order snapshot and the InvoicingPort, so this lives here rather than on Accounting.
+   */
+  async retryInvoiceGeneration(orderId: string, actorUserId: string): Promise<void> {
+    const order = await this.getById(orderId);
+    if (order.status === 'PENDING_CONFIRMATION') {
+      throw new BadRequestException('Cannot generate an invoice before the order is confirmed.');
+    }
+    await this.invoicing.generateInvoiceForOrder(this.toInvoiceSnapshot(order), actorUserId);
   }
 
   list(filters: {
@@ -264,8 +400,11 @@ export class OrderService {
     return updated;
   }
 
-  confirm(id: string, actorUserId: string, ipAddress?: string | null): Promise<Order> {
-    return this.transition(id, 'CONFIRMED', actorUserId, ipAddress);
+  async confirm(id: string, actorUserId: string, ipAddress?: string | null): Promise<Order> {
+    const updated = await this.transition(id, 'CONFIRMED', actorUserId, ipAddress);
+    const order = await this.getById(id);
+    await this.runConfirmationSaga(order, actorUserId);
+    return updated;
   }
 
   hold(id: string, actorUserId: string, ipAddress?: string | null): Promise<Order> {
@@ -276,8 +415,18 @@ export class OrderService {
     return this.transition(id, 'CONFIRMED', actorUserId, ipAddress);
   }
 
-  cancel(id: string, actorUserId: string, ipAddress?: string | null): Promise<Order> {
-    return this.transition(id, 'CANCELLED', actorUserId, ipAddress);
+  /**
+   * Only a still-PENDING_CONFIRMATION order has ACTIVE (uncommitted) reservations to release —
+   * once CONFIRMED, the saga has already dispatched the stock for real, and reversing that is
+   * explicitly out of scope for Phase 5. See docs/DOMAIN_MODEL_PHASE5.md.
+   */
+  async cancel(id: string, actorUserId: string, ipAddress?: string | null): Promise<Order> {
+    const before = await this.getById(id);
+    const updated = await this.transition(id, 'CANCELLED', actorUserId, ipAddress);
+    if (before.status === 'PENDING_CONFIRMATION') {
+      await this.inventoryRelease.release(before.companyId, id);
+    }
+    return updated;
   }
 
   close(id: string, actorUserId: string, ipAddress?: string | null): Promise<Order> {
@@ -304,7 +453,7 @@ export class OrderService {
       })),
     );
 
-    let updated = before;
+    let updated: Order = before;
     if (nextStatus !== before.status) {
       assertOrderTransition(before.status, nextStatus);
       updated = await this.repo.updateStatus(orderId, nextStatus);
@@ -392,6 +541,8 @@ export class OrderService {
 
     if (decision === 'APPROVED') {
       await this.repo.updateStatus(approval.entityId, 'CONFIRMED');
+      const confirmed = await this.getById(approval.entityId);
+      await this.runConfirmationSaga(confirmed, actorUserId);
     }
     await this.audit.record({
       companyId: order.companyId,

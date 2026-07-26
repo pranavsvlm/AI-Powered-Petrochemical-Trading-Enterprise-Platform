@@ -57,11 +57,20 @@ const PHASE3_MODULES = ['documents'];
  */
 const PHASE4_MODULES = ['customers', 'products', 'quotations', 'orders'];
 
+/**
+ * Phase 5's Inventory, Procurement & Finance surface area (docs 14/16/17). No new roles were
+ * needed — `INVENTORY_MANAGER`/`PROCUREMENT_MANAGER`/`FINANCE_MANAGER` already exist in
+ * `SYSTEM_ROLES.company` from Phase 1, unused until now. `modules/trading` (Contracts,
+ * Shipments, live FX) remains deferred — see docs/DOMAIN_MODEL_PHASE5.md.
+ */
+const PHASE5_MODULES = ['inventory', 'procurement', 'accounting'];
+
 export const SEED_PERMISSIONS = [
   ...PHASE1_MODULES,
   ...PHASE2_MODULES,
   ...PHASE3_MODULES,
   ...PHASE4_MODULES,
+  ...PHASE5_MODULES,
 ].flatMap((module) =>
   Object.values(PermissionAction).map((action) => ({
     code: `${module}:${action.toLowerCase()}`,

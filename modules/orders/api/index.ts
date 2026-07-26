@@ -6,6 +6,11 @@ export type {
   QuotationLookupPort,
   CustomerLookupPort,
   ProductLookupPort,
+  InventoryReservePort,
+  InventoryReleasePort,
+  InventoryCommitPort,
+  OrderSnapshotForInvoicing,
+  InvoicingPort,
   CreateOrderDirectInput,
 } from '../application/order.service';
 export { OrderRepository } from '../infrastructure/order.repository';

@@ -40,6 +40,7 @@ export class OrdersController {
       dto.quotationId,
       req.user.sub,
       req.ip ?? null,
+      dto.warehouseId,
     );
   }
 
@@ -141,5 +142,16 @@ export class OrdersController {
       dto.comment,
       req.ip ?? null,
     );
+  }
+
+  /**
+   * The documented manual-retry path for the confirmation saga's one known failure mode (order
+   * CONFIRMED, inventory reverted, no Invoice) — see docs/DOMAIN_MODEL_PHASE5.md.
+   */
+  @RequirePermission('orders', PermissionAction.EDIT)
+  @Post(':id/retry-invoice')
+  async retryInvoice(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthedRequest) {
+    await this.orders.retryInvoiceGeneration(id, req.user.sub);
+    return { ok: true };
   }
 }

@@ -1,5 +1,6 @@
 import type {
   TenantScopedPrismaClient,
+  TenantScopedTransactionClient,
   Order,
   OrderLineItem,
   OrderStatus,
@@ -8,6 +9,8 @@ import type {
   ApprovalRequest,
   ApprovalStatus,
 } from '@platform/database';
+
+type Client = TenantScopedPrismaClient | TenantScopedTransactionClient;
 
 export interface OrderLineItemInput {
   productId: string;
@@ -37,8 +40,8 @@ export type OrderWithLineItems = Order & { lineItems: OrderLineItem[] };
 export class OrderRepository {
   constructor(private readonly prisma: TenantScopedPrismaClient) {}
 
-  create(input: CreateOrderInput): Promise<OrderWithLineItems> {
-    return this.prisma.order.create({
+  create(input: CreateOrderInput, client: Client = this.prisma): Promise<OrderWithLineItems> {
+    return client.order.create({
       data: {
         companyId: input.companyId,
         orderNumber: input.orderNumber,

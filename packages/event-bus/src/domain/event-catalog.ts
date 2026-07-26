@@ -2,8 +2,10 @@
  * Typed constants for event names published across the platform. Phase 2 introduced these as
  * documentation-only placeholders (doc 28) before any business module existed to publish
  * them; Phase 4's Customer/Product/Rfq/Quotation/Order services are the first real publishers
- * of the CUSTOMER/ORDER/RFQ family below — see docs/DOMAIN_MODEL_PHASE4.md. INVOICE_GENERATED
- * remains documentation-only (Finance is Phase 5) — do not subscribe to it expecting traffic.
+ * of the CUSTOMER/ORDER/RFQ family below — see docs/DOMAIN_MODEL_PHASE4.md. Phase 5's
+ * Inventory/Procurement/Accounting services are the first real publishers of the
+ * INVENTORY/GOODS_RECEIVED/PURCHASE_ORDER/SUPPLIER_BILL/JOURNAL family and of
+ * INVOICE_GENERATED — see docs/DOMAIN_MODEL_PHASE5.md.
  */
 export const EVENT_TYPES = {
   // Platform-backbone-internal events, real in Phase 2:
@@ -26,8 +28,14 @@ export const EVENT_TYPES = {
   QUOTATION_REJECTED: 'QuotationRejected',
   ORDER_CREATED: 'OrderCreated',
   ORDER_STATUS_CHANGED: 'OrderStatusChanged',
-  // Example business-module event name (doc 28) — documentation only, no publisher exists
-  // yet; Finance is Phase 5. Do not subscribe to this expecting real traffic.
+  // Inventory, Procurement & Finance events, real in Phase 5:
+  INVENTORY_RESERVED: 'InventoryReserved',
+  INVENTORY_COMMITTED: 'InventoryCommitted',
+  GOODS_RECEIVED: 'GoodsReceived',
+  PURCHASE_ORDER_CREATED: 'PurchaseOrderCreated',
+  PURCHASE_ORDER_APPROVED: 'PurchaseOrderApproved',
+  SUPPLIER_BILL_CREATED: 'SupplierBillCreated',
+  JOURNAL_POSTED: 'JournalPosted',
   INVOICE_GENERATED: 'InvoiceGenerated',
 } as const;
 
