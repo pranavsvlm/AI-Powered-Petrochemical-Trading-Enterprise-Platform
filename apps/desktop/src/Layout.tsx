@@ -7,6 +7,15 @@ const NAV_ITEMS = [
   { to: '/rfqs', label: 'RFQs' },
   { to: '/quotations', label: 'Quotations' },
   { to: '/orders', label: 'Orders' },
+  { to: '/warehouses', label: 'Warehouses' },
+  { to: '/stock', label: 'Stock' },
+  { to: '/suppliers', label: 'Suppliers' },
+  { to: '/requisitions', label: 'Requisitions' },
+  { to: '/purchase-orders', label: 'Purchase Orders' },
+  { to: '/chart-of-accounts', label: 'Chart of Accounts' },
+  { to: '/invoices', label: 'Invoices' },
+  { to: '/supplier-bills', label: 'Supplier Bills' },
+  { to: '/reports', label: 'Reports' },
 ];
 
 export function Layout() {

@@ -17,6 +17,9 @@
     "@modules/products": "workspace:*",
     "@modules/quotations": "workspace:*",
     "@modules/orders": "workspace:*",
+    "@modules/inventory": "workspace:*",
+    "@modules/procurement": "workspace:*",
+    "@modules/accounting": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.27.0"

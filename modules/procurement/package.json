@@ -18,6 +18,8 @@
     "@platform/database": "workspace:*",
     "@platform/event-bus": "workspace:*",
     "@platform/ui": "workspace:*",
+    "@modules/products": "workspace:*",
+    "@modules/inventory": "workspace:*",
     "react": "^18.3.1",
     "react-router-dom": "^6.27.0"
   },

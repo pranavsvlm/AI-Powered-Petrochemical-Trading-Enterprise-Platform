@@ -9,6 +9,26 @@ import {
   QuotationDetailPage,
 } from '@modules/quotations/ui';
 import { OrderListPage, OrderCreatePage, OrderDetailPage } from '@modules/orders/ui';
+import { WarehouseListPage, WarehouseCreatePage, InventoryStockPage } from '@modules/inventory/ui';
+import {
+  SupplierListPage,
+  SupplierCreatePage,
+  SupplierDetailPage,
+  RequisitionListPage,
+  RequisitionCreatePage,
+  RequisitionDetailPage,
+  PurchaseOrderListPage,
+  PurchaseOrderCreatePage,
+  PurchaseOrderDetailPage,
+  GoodsReceiptCreatePage,
+} from '@modules/procurement/ui';
+import {
+  ChartOfAccountsPage,
+  InvoiceListPage,
+  InvoiceDetailPage,
+  SupplierBillListPage,
+  ReportsPage,
+} from '@modules/accounting/ui';
 import { Layout } from './Layout';
 import { LoginPage } from './pages/LoginPage';
 import { RequireAuth } from './RequireAuth';
@@ -38,6 +58,24 @@ export const router: ReturnType<typeof createHashRouter> = createHashRouter([
       { path: 'orders', element: <OrderListPage /> },
       { path: 'orders/new', element: <OrderCreatePage /> },
       { path: 'orders/:id', element: <OrderDetailPage /> },
+      { path: 'warehouses', element: <WarehouseListPage /> },
+      { path: 'warehouses/new', element: <WarehouseCreatePage /> },
+      { path: 'stock', element: <InventoryStockPage /> },
+      { path: 'suppliers', element: <SupplierListPage /> },
+      { path: 'suppliers/new', element: <SupplierCreatePage /> },
+      { path: 'suppliers/:id', element: <SupplierDetailPage /> },
+      { path: 'requisitions', element: <RequisitionListPage /> },
+      { path: 'requisitions/new', element: <RequisitionCreatePage /> },
+      { path: 'requisitions/:id', element: <RequisitionDetailPage /> },
+      { path: 'purchase-orders', element: <PurchaseOrderListPage /> },
+      { path: 'purchase-orders/new', element: <PurchaseOrderCreatePage /> },
+      { path: 'purchase-orders/:id', element: <PurchaseOrderDetailPage /> },
+      { path: 'goods-receipts/new', element: <GoodsReceiptCreatePage /> },
+      { path: 'chart-of-accounts', element: <ChartOfAccountsPage /> },
+      { path: 'invoices', element: <InvoiceListPage /> },
+      { path: 'invoices/:id', element: <InvoiceDetailPage /> },
+      { path: 'supplier-bills', element: <SupplierBillListPage /> },
+      { path: 'reports', element: <ReportsPage /> },
     ],
   },
 ]);

@@ -85,3 +85,9 @@ export function useCancelOrder() {
   const api = useApiClient();
   return useCallback((id: string) => api.post<Order>(`/orders/${id}/cancel`, {}), [api]);
 }
+
+/** The manual-retry path for the confirmation saga's one known failure mode — see docs/DOMAIN_MODEL_PHASE5.md. */
+export function useRetryInvoiceGeneration() {
+  const api = useApiClient();
+  return useCallback((id: string) => api.post(`/orders/${id}/retry-invoice`, {}), [api]);
+}

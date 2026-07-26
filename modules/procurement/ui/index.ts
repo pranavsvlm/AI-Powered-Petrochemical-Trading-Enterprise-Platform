@@ -1,0 +1,10 @@
+export { SupplierListPage } from './SupplierListPage';
+export { SupplierCreatePage } from './SupplierCreatePage';
+export { SupplierDetailPage } from './SupplierDetailPage';
+export { RequisitionListPage } from './RequisitionListPage';
+export { RequisitionCreatePage } from './RequisitionCreatePage';
+export { RequisitionDetailPage } from './RequisitionDetailPage';
+export { PurchaseOrderListPage } from './PurchaseOrderListPage';
+export { PurchaseOrderCreatePage } from './PurchaseOrderCreatePage';
+export { PurchaseOrderDetailPage } from './PurchaseOrderDetailPage';
+export { GoodsReceiptCreatePage } from './GoodsReceiptCreatePage';

@@ -1,13 +1,22 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useCloseOrder, useConfirmOrder, useFulfillOrderLine, useOrder } from '../hooks/use-orders';
+import { useInvoiceByOrderId } from '@modules/accounting/hooks/use-invoices';
+import {
+  useCloseOrder,
+  useConfirmOrder,
+  useFulfillOrderLine,
+  useOrder,
+  useRetryInvoiceGeneration,
+} from '../hooks/use-orders';
 
 export function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: order, loading, error, refetch } = useOrder(id!);
+  const { data: invoice, refetch: refetchInvoice } = useInvoiceByOrderId(id!);
   const confirm = useConfirmOrder();
   const close = useCloseOrder();
   const fulfillLine = useFulfillOrderLine();
+  const retryInvoice = useRetryInvoiceGeneration();
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [fulfillDrafts, setFulfillDrafts] = useState<Record<string, string>>({});
@@ -17,6 +26,7 @@ export function OrderDetailPage() {
     try {
       await action();
       refetch();
+      refetchInvoice();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Action failed.');
     }
@@ -105,6 +115,29 @@ export function OrderDetailPage() {
           )}
         </div>
       </div>
+
+      {order.status !== 'PENDING_CONFIRMATION' && (
+        <div className="card">
+          <h3>Invoice</h3>
+          {invoice ? (
+            <p>
+              <Link to={`/invoices/${invoice.id}`}>{invoice.invoiceNumber}</Link>{' '}
+              <span className="pill">{invoice.status}</span> · {invoice.totalAmount}{' '}
+              {invoice.currency}
+            </p>
+          ) : (
+            <>
+              <p className="empty-state">
+                No invoice yet — confirming an order generates one automatically. If confirmation
+                succeeded but invoicing failed, retry it here.
+              </p>
+              <button className="secondary" onClick={() => run(() => retryInvoice(order.id))}>
+                Retry invoice generation
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

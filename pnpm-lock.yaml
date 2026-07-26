@@ -174,12 +174,21 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@modules/accounting':
+        specifier: workspace:*
+        version: link:../../modules/accounting
       '@modules/customers':
         specifier: workspace:*
         version: link:../../modules/customers
+      '@modules/inventory':
+        specifier: workspace:*
+        version: link:../../modules/inventory
       '@modules/orders':
         specifier: workspace:*
         version: link:../../modules/orders
+      '@modules/procurement':
+        specifier: workspace:*
+        version: link:../../modules/procurement
       '@modules/products':
         specifier: workspace:*
         version: link:../../modules/products
@@ -475,6 +484,9 @@ importers:
 
   modules/orders:
     dependencies:
+      '@modules/accounting':
+        specifier: workspace:*
+        version: link:../accounting
       '@nestjs/common':
         specifier: ^10.4.4
         version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -521,6 +533,12 @@ importers:
 
   modules/procurement:
     dependencies:
+      '@modules/inventory':
+        specifier: workspace:*
+        version: link:../inventory
+      '@modules/products':
+        specifier: workspace:*
+        version: link:../products
       '@nestjs/common':
         specifier: ^10.4.4
         version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
