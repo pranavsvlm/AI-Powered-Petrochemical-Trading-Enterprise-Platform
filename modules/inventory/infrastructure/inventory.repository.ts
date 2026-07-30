@@ -61,18 +61,27 @@ export interface CreateAdjustmentInput {
 export class InventoryRepository {
   constructor(private readonly prisma: TenantScopedPrismaClient) {}
 
-  createWarehouse(input: CreateWarehouseInput): Promise<Warehouse> {
-    return this.prisma.warehouse.create({
-      data: {
-        companyId: input.companyId,
-        branchId: input.branchId,
-        code: input.code,
-        name: input.name,
-        addressLine1: input.addressLine1,
-        city: input.city,
-        country: input.country,
-        isDefault: input.isDefault ?? false,
-      },
+  /** At most one default warehouse per company — creating a new default demotes any existing one. */
+  async createWarehouse(input: CreateWarehouseInput): Promise<Warehouse> {
+    const data = {
+      companyId: input.companyId,
+      branchId: input.branchId,
+      code: input.code,
+      name: input.name,
+      addressLine1: input.addressLine1,
+      city: input.city,
+      country: input.country,
+      isDefault: input.isDefault ?? false,
+    };
+    if (!input.isDefault) {
+      return this.prisma.warehouse.create({ data });
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.warehouse.updateMany({
+        where: { companyId: input.companyId, isDefault: true },
+        data: { isDefault: false },
+      });
+      return tx.warehouse.create({ data });
     });
   }
 
