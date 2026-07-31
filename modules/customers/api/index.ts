@@ -16,3 +16,7 @@ export { isWithinCreditLimit } from '../domain/credit';
 export type { CreditCheckInput } from '../domain/credit';
 export { NotImplementedAiCustomerProfileProvider } from '../domain/ports/ai-customer-profile.port';
 export type { AiCustomerProfileProvider } from '../domain/ports/ai-customer-profile.port';
+export {
+  RealAiCustomerProfileProvider,
+  AI_CUSTOMER_PROFILE_PROMPT_KEY,
+} from '../infrastructure/real-ai-customer-profile-provider';

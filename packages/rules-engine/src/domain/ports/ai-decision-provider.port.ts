@@ -2,6 +2,7 @@ import { NotImplementedInPhaseError } from '@platform/core';
 
 export interface AiDecisionContext {
   ruleId: string;
+  companyId: string;
   module: string;
   attributes: Record<string, unknown>;
 }

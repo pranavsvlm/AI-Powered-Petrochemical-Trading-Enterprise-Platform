@@ -11,6 +11,7 @@ import type {
   ApprovalRequest,
 } from '@platform/database';
 import { assertCustomerTransition } from '../domain/customer-lifecycle';
+import { isWithinCreditLimit } from '../domain/credit';
 import {
   CustomerRepository,
   type CreateCustomerInput,
@@ -111,6 +112,26 @@ export class CustomerService {
       'customers',
     );
     return customer;
+  }
+
+  /**
+   * Simplified credit check — a real "outstanding balance" would net out unpaid Invoices via
+   * modules/accounting, a cross-module dependency deliberately not added for this one field
+   * (see docs/DOMAIN_MODEL_PHASE6.md §14 for what's out of scope). Treats outstanding balance
+   * as zero for now; the pure `isWithinCreditLimit` check itself is real.
+   */
+  async checkCredit(
+    customerId: string,
+    proposedOrderTotal: number,
+  ): Promise<{ withinLimit: boolean; creditLimit: number | null }> {
+    const customer = await this.getById(customerId);
+    const creditLimit = customer.creditLimit == null ? null : Number(customer.creditLimit);
+    const withinLimit = isWithinCreditLimit({
+      creditLimit,
+      outstandingBalance: 0,
+      proposedOrderTotal,
+    });
+    return { withinLimit, creditLimit };
   }
 
   async getById(id: string): Promise<Customer> {

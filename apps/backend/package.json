@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --max-warnings=0",
     "test": "jest",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "seed:ai-prompts": "ts-node --transpile-only src/scripts/seed-ai-prompts.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.4",
@@ -26,6 +27,7 @@
     "@platform/notifications": "workspace:*",
     "@platform/storage": "workspace:*",
     "@platform/search": "workspace:*",
+    "@platform/ai": "workspace:*",
     "@modules/company": "workspace:*",
     "@modules/users": "workspace:*",
     "@modules/document-management": "workspace:*",
@@ -36,6 +38,7 @@
     "@modules/inventory": "workspace:*",
     "@modules/procurement": "workspace:*",
     "@modules/accounting": "workspace:*",
+    "@modules/ai": "workspace:*",
     "class-validator": "^0.14.1",
     "class-transformer": "^0.5.1",
     "jsonwebtoken": "^9.0.2",

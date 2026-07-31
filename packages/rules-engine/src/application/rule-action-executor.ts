@@ -111,6 +111,7 @@ export class RuleActionExecutor {
       case 'CALL_AI':
         return this.deps.aiDecisionProvider.decide({
           ruleId,
+          companyId: context.companyId,
           module: context.module,
           attributes: context.attributes,
         });

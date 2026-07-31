@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@platform/core": "workspace:*",
-    "@platform/database": "workspace:*"
+    "@platform/database": "workspace:*",
+    "@platform/ai": "workspace:*"
   },
   "devDependencies": {
     "@types/jest": "^29.5.13",

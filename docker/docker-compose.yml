@@ -2,7 +2,11 @@ version: '3.9'
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # pgvector/pgvector:pg16 = upstream postgres:16 + the pgvector extension (needed by Phase 6's
+    # DocumentEmbedding.embedding column) — same Postgres major version, same data directory
+    # format as the plain postgres:16-alpine image used through Phase 5, so the existing
+    # postgres_data volume keeps working unchanged.
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}

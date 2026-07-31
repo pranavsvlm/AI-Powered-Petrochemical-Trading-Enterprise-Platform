@@ -4,15 +4,18 @@
 // Phase 3: Storage, Documents & Search.
 // Phase 4: Core Trading Domain (Customers, Products, RFQ -> Quotation -> Order).
 // Phase 5: Inventory, Procurement & Finance.
-// See docs/DOMAIN_MODEL_PHASE{1,2,3,4,5}.md for ratified domain decisions.
+// Phase 6: AI Core & Agent Framework.
+// See docs/DOMAIN_MODEL_PHASE{1,2,3,4,5,6}.md for ratified domain decisions.
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -79,6 +82,12 @@ model Company {
   invoices           Invoice[]
   payments           Payment[]
   supplierBills      SupplierBill[]
+  aiProviderConfigs  AiProviderConfig[]
+  aiUsageRecords     AiUsageRecord[]
+  promptTemplates    PromptTemplate[]
+  agentExecutions    AgentExecution[]
+  conversations      Conversation[]
+  memories           Memory[]
 
   @@map("companies")
   // Phase 2 back-relations intentionally omitted (Prisma does not require the
@@ -1259,12 +1268,19 @@ model DocumentAudit {
 
 // Schema exists now (future-proofing), unused in Phase 3 — see docs/DOMAIN_MODEL_PHASE3.md §8.
 // Wired up once packages/search's VectorSearchPort gets a real implementation.
+// Phase 6: the `embedding` column and `metadata` field are the schema completion
+// docs/DOMAIN_MODEL_PHASE3.md §8 flagged as deferred ("schema exists, unused") — see
+// docs/DOMAIN_MODEL_PHASE6.md §7 for why the column is a fixed vector(768) tied to one
+// designated embedding model rather than part of the same per-company provider-swap surface
+// chat completion gets.
 model DocumentEmbedding {
-  id         String   @id @default(uuid())
-  documentId String   @map("document_id")
-  chunkIndex Int      @map("chunk_index")
-  chunkText  String   @map("chunk_text")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id         String                     @id @default(uuid())
+  documentId String                     @map("document_id")
+  chunkIndex Int                        @map("chunk_index")
+  chunkText  String                     @map("chunk_text")
+  metadata   Json?
+  embedding  Unsupported("vector(768)")?
+  createdAt  DateTime                   @default(now()) @map("created_at")
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -2339,4 +2355,291 @@ model SupplierBill {
   @@index([companyId, status])
   @@index([companyId, supplierId])
   @@map("supplier_bills")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// AI Core & Agent Framework (docs 05, 18, 26) — Phase 6
+// See docs/DOMAIN_MODEL_PHASE6.md for the ratified router/cost-ceiling design, the
+// code-defined (not user-authored) Agent/Tool registry, the pause/resume approval state
+// machine, and the pgvector-backed vector-search seam finally filled in.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum AiProviderKind {
+  OPENAI
+  ANTHROPIC
+  GEMINI
+  OLLAMA
+}
+
+enum AgentExecutionStatus {
+  RUNNING
+  AWAITING_APPROVAL
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ToolExecutionStatus {
+  RUNNING
+  AWAITING_APPROVAL
+  SUCCEEDED
+  FAILED
+  REJECTED
+}
+
+enum ConversationStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum MessageRole {
+  SYSTEM
+  USER
+  ASSISTANT
+  TOOL
+}
+
+enum MemoryScopeType {
+  COMPANY
+  CUSTOMER
+  USER
+  CONVERSATION
+  TASK
+}
+
+// One row per company per provider it has configured. CompanySettings.aiProvider (Phase 1,
+// unused until now) becomes a denormalized "current default provider name" convenience
+// pointer that AiProviderConfigService keeps in sync — see docs/DOMAIN_MODEL_PHASE6.md §1.
+model AiProviderConfig {
+  id                    String         @id @default(uuid())
+  companyId             String         @map("company_id")
+  provider              AiProviderKind
+  enabled               Boolean        @default(true)
+  isDefault             Boolean        @default(false) @map("is_default")
+  priority              Int            @default(0) @map("priority")
+  baseUrl               String?        @map("base_url")
+  defaultChatModel      String?        @map("default_chat_model")
+  defaultEmbedModel     String?        @map("default_embed_model")
+  apiKeyRef             String?        @map("api_key_ref")
+  monthlyCostCeilingUsd Decimal?       @map("monthly_cost_ceiling_usd")
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, provider])
+  @@index([companyId])
+  @@map("ai_provider_configs")
+}
+
+// Append-only ledger — one row per actual provider call, written by AiRouter itself
+// regardless of caller (rule seam, agent tool loop, RAG embedding). Backs both cost-ceiling
+// enforcement (SUM(costUsd) over the current period) and observability (provider, tokens,
+// latency, cost, success rate) with one mechanism, not two.
+model AiUsageRecord {
+  id                String         @id @default(uuid())
+  companyId         String         @map("company_id")
+  provider          AiProviderKind
+  model             String
+  purpose           String
+  promptTokens      Int?           @map("prompt_tokens")
+  completionTokens  Int?           @map("completion_tokens")
+  totalTokens       Int?           @map("total_tokens")
+  costUsd           Decimal        @map("cost_usd")
+  latencyMs         Int            @map("latency_ms")
+  success           Boolean
+  errorMessage      String?        @map("error_message")
+  requestedByUserId String?        @map("requested_by_user_id")
+  agentExecutionId  String?        @map("agent_execution_id")
+  createdAt         DateTime       @default(now()) @map("created_at")
+
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agentExecution AgentExecution? @relation(fields: [agentExecutionId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([companyId, provider, createdAt])
+  @@map("ai_usage_records")
+}
+
+// Mirrors Rule/RuleVersion's two-table versioning shape exactly, and Role.companyId's
+// nullable-tenant pattern for platform-wide defaults a company may override. Platform-default
+// rows (companyId: null) are written only by a seed script using a raw un-extended
+// PrismaClient, read at runtime via withoutTenantScope() — see docs/DOMAIN_MODEL_PHASE6.md §5.
+model PromptTemplate {
+  id        String   @id @default(uuid())
+  companyId String?  @map("company_id")
+  key       String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company  Company?                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  versions PromptTemplateVersion[]
+
+  @@unique([companyId, key])
+  @@map("prompt_templates")
+}
+
+model PromptTemplateVersion {
+  id               String    @id @default(uuid())
+  promptTemplateId String    @map("prompt_template_id")
+  version          Int
+  content          String
+  publishedAt      DateTime? @map("published_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  promptTemplate PromptTemplate @relation(fields: [promptTemplateId], references: [id], onDelete: Cascade)
+
+  @@unique([promptTemplateId, version])
+  @@map("prompt_template_versions")
+}
+
+// Code-defined catalog, mirrored into the DB at boot from packages/ai's static
+// AGENT_DEFINITIONS/TOOL_DEFINITIONS registries — NOT tenant-scoped and NOT runtime-editable
+// like Rule/Workflow (doc 26's agents are engineering-defined capability bundles, not
+// business-user-authored content). Per-company enable/disable reuses the existing
+// CompanyFeature model (moduleName = 'ai:<agentKey>') rather than a new join table. See
+// docs/DOMAIN_MODEL_PHASE6.md §4.
+model Agent {
+  id                      String   @id @default(uuid())
+  key                     String   @unique
+  name                    String
+  description             String
+  version                 Int      @default(1)
+  capabilities            Json
+  systemPromptTemplateKey String   @map("system_prompt_template_key")
+  isBuiltIn               Boolean  @default(true) @map("is_built_in")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  executions AgentExecution[]
+
+  @@map("agents")
+}
+
+model Tool {
+  id                       String           @id @default(uuid())
+  key                      String           @unique
+  name                     String
+  description              String
+  inputSchema              Json             @map("input_schema")
+  requiredPermissionModule String           @map("required_permission_module")
+  requiredPermissionAction PermissionAction @map("required_permission_action")
+  requiresHumanApproval    Boolean          @default(false) @map("requires_human_approval")
+  isBuiltIn                Boolean          @default(true) @map("is_built_in")
+  createdAt                DateTime         @default(now()) @map("created_at")
+  updatedAt                DateTime         @updatedAt @map("updated_at")
+
+  executions ToolExecution[]
+
+  @@map("tools")
+}
+
+// Real per-company aggregate — one row per agent invocation. pausedState persists everything
+// needed to resume mid-tool-call-loop after a human approval decision — see
+// docs/DOMAIN_MODEL_PHASE6.md §10-11 for the pause/resume state machine and why Human Approval
+// reuses ApprovalRequest/RuleEvaluationService rather than a second approval system.
+model AgentExecution {
+  id                String               @id @default(uuid())
+  companyId         String               @map("company_id")
+  agentId           String               @map("agent_id")
+  conversationId    String?              @map("conversation_id")
+  requestedByUserId String               @map("requested_by_user_id")
+  status            AgentExecutionStatus @default(RUNNING)
+  input             Json
+  output            Json?
+  pausedState       Json?                @map("paused_state")
+  errorMessage      String?              @map("error_message")
+  totalTokens       Int?                 @map("total_tokens")
+  totalCostUsd      Decimal?             @map("total_cost_usd")
+  durationMs        Int?                 @map("duration_ms")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent          Agent           @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  conversation   Conversation?   @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  toolExecutions ToolExecution[]
+  usageRecords   AiUsageRecord[]
+
+  @@index([companyId, status])
+  @@index([companyId, createdAt])
+  @@map("agent_executions")
+}
+
+// Pure child of AgentExecution (no own companyId — reached only via its tenant-scoped parent,
+// same shape as OrderLineItem). Independently queryable for "View AI Analytics" via the parent join.
+model ToolExecution {
+  id                String              @id @default(uuid())
+  agentExecutionId  String              @map("agent_execution_id")
+  toolId            String              @map("tool_id")
+  status            ToolExecutionStatus @default(RUNNING)
+  input             Json
+  output            Json?
+  approvalRequestId String?             @map("approval_request_id")
+  errorMessage      String?             @map("error_message")
+  durationMs        Int?                @map("duration_ms")
+  createdAt         DateTime            @default(now()) @map("created_at")
+
+  agentExecution AgentExecution @relation(fields: [agentExecutionId], references: [id], onDelete: Cascade)
+  tool           Tool           @relation(fields: [toolId], references: [id], onDelete: Restrict)
+
+  @@index([agentExecutionId])
+  @@map("tool_executions")
+}
+
+model Conversation {
+  id          String             @id @default(uuid())
+  companyId   String             @map("company_id")
+  agentId     String?            @map("agent_id")
+  subjectType String             @map("subject_type")
+  subjectId   String             @map("subject_id")
+  title       String?
+  status      ConversationStatus @default(ACTIVE)
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  company    Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  messages   ConversationMessage[]
+  executions AgentExecution[]
+
+  @@index([companyId, subjectType, subjectId])
+  @@map("conversations")
+}
+
+model ConversationMessage {
+  id             String      @id @default(uuid())
+  conversationId String      @map("conversation_id")
+  role           MessageRole
+  content        String
+  toolName       String?     @map("tool_name")
+  toolCallId     String?     @map("tool_call_id")
+  tokensUsed     Int?        @map("tokens_used")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@map("conversation_messages")
+}
+
+// Company-isolated durable memory (doc 05/26: "never share memory between companies").
+model Memory {
+  id             String          @id @default(uuid())
+  companyId      String          @map("company_id")
+  scopeType      MemoryScopeType @map("scope_type")
+  scopeId        String?         @map("scope_id")
+  key            String
+  value          Json
+  sourceAgentKey String?         @map("source_agent_key")
+  confidence     Float?
+  expiresAt      DateTime?       @map("expires_at")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, scopeType, scopeId, key])
+  @@index([companyId, scopeType, scopeId])
+  @@map("memories")
 }

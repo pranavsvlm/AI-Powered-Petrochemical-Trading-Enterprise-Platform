@@ -201,6 +201,12 @@ export class DocumentsController {
   assignTag(@Param('id', ParseUUIDPipe) id: string, @Param('tagId', ParseUUIDPipe) tagId: string) {
     return this.documents.assignTag(id, tagId);
   }
+
+  @RequirePermission('documents', PermissionAction.EXECUTE_AI)
+  @Post(':id/ocr')
+  extractText(@Param('id', ParseUUIDPipe) id: string) {
+    return this.documents.extractText(id);
+  }
 }
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)

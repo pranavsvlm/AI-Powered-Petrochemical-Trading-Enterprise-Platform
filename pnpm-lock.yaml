@@ -44,6 +44,9 @@ importers:
       '@modules/accounting':
         specifier: workspace:*
         version: link:../../modules/accounting
+      '@modules/ai':
+        specifier: workspace:*
+        version: link:../../modules/ai
       '@modules/company':
         specifier: workspace:*
         version: link:../../modules/company
@@ -80,6 +83,9 @@ importers:
       '@nestjs/platform-express':
         specifier: ^10.4.4
         version: 10.4.22(@nestjs/common@10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)
+      '@platform/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@platform/auth':
         specifier: workspace:*
         version: link:../../packages/auth
@@ -313,6 +319,40 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
 
+  modules/ai:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^10.4.4
+        version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@platform/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@platform/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@platform/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@platform/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+    devDependencies:
+      '@types/jest':
+        specifier: ^29.5.13
+        version: 29.5.14
+      '@types/node':
+        specifier: ^20.16.11
+        version: 20.19.43
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
+      ts-jest:
+        specifier: ^29.2.5
+        version: 29.4.11(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
   modules/company:
     dependencies:
       '@nestjs/common':
@@ -340,6 +380,9 @@ importers:
       '@nestjs/common':
         specifier: ^10.4.4
         version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@platform/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@platform/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -588,6 +631,9 @@ importers:
       '@nestjs/common':
         specifier: ^10.4.4
         version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@platform/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@platform/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -597,6 +643,9 @@ importers:
       '@platform/event-bus':
         specifier: workspace:*
         version: link:../../packages/event-bus
+      '@platform/search':
+        specifier: workspace:*
+        version: link:../../packages/search
       '@platform/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -734,7 +783,41 @@ importers:
         version: link:../../packages/types
 
   packages/ai:
+    dependencies:
+      '@platform/core':
+        specifier: workspace:*
+        version: link:../core
+      '@platform/database':
+        specifier: workspace:*
+        version: link:../database
+      '@platform/notifications':
+        specifier: workspace:*
+        version: link:../notifications
+      '@platform/permissions':
+        specifier: workspace:*
+        version: link:../permissions
+      '@platform/rules-engine':
+        specifier: workspace:*
+        version: link:../rules-engine
+      '@platform/storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@platform/types':
+        specifier: workspace:*
+        version: link:../types
     devDependencies:
+      '@types/jest':
+        specifier: ^29.5.13
+        version: 29.5.14
+      '@types/node':
+        specifier: ^20.16.11
+        version: 20.19.43
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
+      ts-jest:
+        specifier: ^29.2.5
+        version: 29.4.11(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
@@ -954,6 +1037,9 @@ importers:
 
   packages/search:
     dependencies:
+      '@platform/ai':
+        specifier: workspace:*
+        version: link:../ai
       '@platform/core':
         specifier: workspace:*
         version: link:../core

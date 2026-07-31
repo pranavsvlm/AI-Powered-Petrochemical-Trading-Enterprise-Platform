@@ -61,6 +61,7 @@ export class NodeExecutor {
         // not silently skipped.
         const result = await this.deps.aiDecisionProvider.decide({
           ruleId: `workflow-node:${node.id}`,
+          companyId,
           module: String(node.config.module ?? 'workflow'),
           attributes: context,
         });

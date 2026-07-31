@@ -1,17 +1,22 @@
 import { Module } from '@nestjs/common';
-import { CustomerService, type CustomerAuditReader } from '@modules/customers';
+import {
+  CustomerService,
+  RealAiCustomerProfileProvider,
+  type CustomerAuditReader,
+} from '@modules/customers';
 import { RedisStreamsEventBus } from '@platform/event-bus';
 import {
   LegacyApprovalRuleSource,
   NativeRuleSource,
-  NotImplementedAiDecisionProvider,
   RuleActionExecutor,
   RuleEvaluationService,
   RuleRepository,
 } from '@platform/rules-engine';
+import { RealAiDecisionProvider } from '@platform/ai';
 import { CustomersController } from './customers.controller';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { buildAiRouter, buildPromptTemplateService } from '../../common/ai/ai-factory';
 
 @Module({
   controllers: [CustomersController],
@@ -25,7 +30,10 @@ import { AuditService } from '../../common/audit/audit.service';
         const ruleRepository = new RuleRepository(db);
         const ruleActionExecutor = new RuleActionExecutor({
           eventBus,
-          aiDecisionProvider: new NotImplementedAiDecisionProvider(),
+          aiDecisionProvider: new RealAiDecisionProvider(
+            buildAiRouter(db),
+            buildPromptTemplateService(db),
+          ),
         });
         const approvalEvaluator = new RuleEvaluationService(ruleRepository, ruleActionExecutor, [
           new LegacyApprovalRuleSource(db),
@@ -45,6 +53,16 @@ import { AuditService } from '../../common/audit/audit.service';
         return new CustomerService(db, approvalEvaluator, eventBus, audit, auditReader);
       },
       inject: [PrismaService, AuditService],
+    },
+    {
+      provide: RealAiCustomerProfileProvider,
+      useFactory: (prisma: PrismaService, customerService: CustomerService) =>
+        new RealAiCustomerProfileProvider(
+          buildAiRouter(prisma.client),
+          buildPromptTemplateService(prisma.client),
+          customerService,
+        ),
+      inject: [PrismaService, CustomerService],
     },
   ],
   exports: [CustomerService],

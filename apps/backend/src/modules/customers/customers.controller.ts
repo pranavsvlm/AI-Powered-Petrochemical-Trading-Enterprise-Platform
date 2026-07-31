@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { PermissionAction, type JwtAccessTokenPayload } from '@platform/types';
-import { CustomerService } from '@modules/customers';
+import { CustomerService, RealAiCustomerProfileProvider } from '@modules/customers';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -31,7 +31,10 @@ type AuthedRequest = Request & { user: JwtAccessTokenPayload };
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('customers')
 export class CustomersController {
-  constructor(private readonly customers: CustomerService) {}
+  constructor(
+    private readonly customers: CustomerService,
+    private readonly aiProfileProvider: RealAiCustomerProfileProvider,
+  ) {}
 
   @RequirePermission('customers', PermissionAction.CREATE)
   @Post()
@@ -148,5 +151,11 @@ export class CustomersController {
   @Get(':id/timeline')
   getTimeline(@Param('id', ParseUUIDPipe) id: string) {
     return this.customers.getTimeline(id);
+  }
+
+  @RequirePermission('customers', PermissionAction.EXECUTE_AI)
+  @Post(':id/ai-analysis')
+  aiAnalysis(@Param('id', ParseUUIDPipe) id: string) {
+    return this.aiProfileProvider.analyze({ customerId: id });
   }
 }

@@ -65,12 +65,26 @@ const PHASE4_MODULES = ['customers', 'products', 'quotations', 'orders'];
  */
 const PHASE5_MODULES = ['inventory', 'procurement', 'accounting'];
 
+/**
+ * Phase 6's AI Core & Agent Framework surface area (docs 05/18/26), gated by
+ * apps/backend/src/modules/ai/ai.controller.ts. Doc-bespoke permission names map onto the
+ * existing PermissionAction enum: "Use AI" -> `ai:execute_ai`; "Manage Agents"/"Manage
+ * Prompts"/"Manage Memory"/"Configure AI Providers" all collapse into the single
+ * administrative `ai:manage_settings` bucket (the same pattern `products:manage_settings`
+ * already uses for "Manage Pricing"/"Manage Categories"); "Approve AI Actions" ->
+ * `ai:approve`; "View AI Analytics" -> `ai:view`. No new roles needed — existing
+ * COMPANY_ADMIN/SALES_MANAGER/INVENTORY_MANAGER/PROCUREMENT_MANAGER cover this once granted
+ * the new `ai:*` codes. See docs/DOMAIN_MODEL_PHASE6.md §13.
+ */
+const PHASE6_MODULES = ['ai'];
+
 export const SEED_PERMISSIONS = [
   ...PHASE1_MODULES,
   ...PHASE2_MODULES,
   ...PHASE3_MODULES,
   ...PHASE4_MODULES,
   ...PHASE5_MODULES,
+  ...PHASE6_MODULES,
 ].flatMap((module) =>
   Object.values(PermissionAction).map((action) => ({
     code: `${module}:${action.toLowerCase()}`,

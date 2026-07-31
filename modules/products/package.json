@@ -17,6 +17,8 @@
     "@platform/types": "workspace:*",
     "@platform/database": "workspace:*",
     "@platform/event-bus": "workspace:*",
+    "@platform/ai": "workspace:*",
+    "@platform/search": "workspace:*",
     "@platform/ui": "workspace:*",
     "react": "^18.3.1",
     "react-router-dom": "^6.27.0"

@@ -19,3 +19,11 @@ export { NotImplementedAiProductExpertProvider } from '../domain/ports/ai-produc
 export type { AiProductExpertProvider } from '../domain/ports/ai-product-expert.port';
 export { NotImplementedAiPricingProvider } from '../domain/ports/ai-pricing.port';
 export type { AiPricingProvider } from '../domain/ports/ai-pricing.port';
+export {
+  RealAiPricingProvider,
+  AI_PRICING_PROMPT_KEY,
+} from '../infrastructure/real-ai-pricing-provider';
+export {
+  RealAiProductExpertProvider,
+  AI_PRODUCT_EXPERT_PROMPT_KEY,
+} from '../infrastructure/real-ai-product-expert-provider';

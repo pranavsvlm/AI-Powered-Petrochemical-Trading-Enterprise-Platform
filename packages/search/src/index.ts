@@ -11,3 +11,6 @@ export type {
 
 export { SearchService } from './application/search.service';
 export type { SearchMode, SearchFilters } from './application/search.service';
+
+export { PgVectorSearchProvider } from './infrastructure/pgvector-search.service';
+export { toVectorLiteral } from './domain/vector-literal';

@@ -18,11 +18,11 @@ import { RedisStreamsEventBus } from '@platform/event-bus';
 import {
   LegacyApprovalRuleSource,
   NativeRuleSource,
-  NotImplementedAiDecisionProvider,
   RuleActionExecutor,
   RuleEvaluationService,
   RuleRepository,
 } from '@platform/rules-engine';
+import { RealAiDecisionProvider } from '@platform/ai';
 import { OrdersController } from './orders.controller';
 import { QuotationsModule } from '../quotations/quotations.module';
 import { ProductsModule } from '../products/products.module';
@@ -31,6 +31,7 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { AccountingModule } from '../accounting/accounting.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { buildAiRouter, buildPromptTemplateService } from '../../common/ai/ai-factory';
 
 @Module({
   imports: [QuotationsModule, ProductsModule, CustomersModule, InventoryModule, AccountingModule],
@@ -53,7 +54,10 @@ import { AuditService } from '../../common/audit/audit.service';
         const ruleRepository = new RuleRepository(db);
         const ruleActionExecutor = new RuleActionExecutor({
           eventBus,
-          aiDecisionProvider: new NotImplementedAiDecisionProvider(),
+          aiDecisionProvider: new RealAiDecisionProvider(
+            buildAiRouter(db),
+            buildPromptTemplateService(db),
+          ),
         });
         const approvalEvaluator = new RuleEvaluationService(ruleRepository, ruleActionExecutor, [
           new LegacyApprovalRuleSource(db),

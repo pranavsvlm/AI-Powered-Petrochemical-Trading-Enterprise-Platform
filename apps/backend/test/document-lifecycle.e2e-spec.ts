@@ -16,19 +16,20 @@ import { getSharedStorage } from '@platform/storage';
 import {
   SearchService,
   DocumentFullTextSearchService,
-  NotImplementedVectorSearchProvider,
+  PgVectorSearchProvider,
 } from '@platform/search';
 import { RedisStreamsEventBus } from '@platform/event-bus';
 import {
   LegacyApprovalRuleSource,
   NativeRuleSource,
-  NotImplementedAiDecisionProvider,
   RuleActionExecutor,
   RuleEvaluationService,
   RuleManagementService,
   RuleRepository,
 } from '@platform/rules-engine';
+import { RealAiDecisionProvider, RealOcrProvider } from '@platform/ai';
 import { DocumentService } from '@modules/document-management';
+import { buildAiRouter, buildPromptTemplateService } from '../src/common/ai/ai-factory';
 
 const db = getPrismaClient();
 const rawDb = new PrismaClient();
@@ -89,14 +90,16 @@ describe('Document Management lifecycle (live Postgres + Redis + MinIO)', () => 
     userId = user.id;
 
     const storage = getSharedStorage();
+    const aiRouter = buildAiRouter(db);
+    const prompts = buildPromptTemplateService(db);
     const searchService = new SearchService(
       new DocumentFullTextSearchService(db),
-      new NotImplementedVectorSearchProvider(),
+      new PgVectorSearchProvider(db, aiRouter),
     );
     const ruleRepository = new RuleRepository(db);
     const ruleActionExecutor = new RuleActionExecutor({
       eventBus,
-      aiDecisionProvider: new NotImplementedAiDecisionProvider(),
+      aiDecisionProvider: new RealAiDecisionProvider(aiRouter, prompts),
     });
     const approvalEvaluator = new RuleEvaluationService(ruleRepository, ruleActionExecutor, [
       new LegacyApprovalRuleSource(db),
@@ -110,7 +113,15 @@ describe('Document Management lifecycle (live Postgres + Redis + MinIO)', () => 
       },
     };
 
-    service = new DocumentService(db, storage, searchService, approvalEvaluator, eventBus, audit);
+    service = new DocumentService(
+      db,
+      storage,
+      searchService,
+      approvalEvaluator,
+      eventBus,
+      audit,
+      new RealOcrProvider(aiRouter, prompts),
+    );
   });
 
   afterAll(async () => {
@@ -462,22 +473,32 @@ describe('Document Management tenant isolation', () => {
     userBId = userB.id;
 
     const storage = getSharedStorage();
+    const aiRouter = buildAiRouter(db);
+    const prompts = buildPromptTemplateService(db);
     const searchService = new SearchService(
       new DocumentFullTextSearchService(db),
-      new NotImplementedVectorSearchProvider(),
+      new PgVectorSearchProvider(db, aiRouter),
     );
     const eventBus = new RedisStreamsEventBus();
     const ruleRepository = new RuleRepository(db);
     const ruleActionExecutor = new RuleActionExecutor({
       eventBus,
-      aiDecisionProvider: new NotImplementedAiDecisionProvider(),
+      aiDecisionProvider: new RealAiDecisionProvider(aiRouter, prompts),
     });
     const approvalEvaluator = new RuleEvaluationService(ruleRepository, ruleActionExecutor, [
       new LegacyApprovalRuleSource(db),
       new NativeRuleSource((companyId, module) => ruleRepository.loadApplicable(companyId, module)),
     ]);
     const audit = { record: async () => {} };
-    service = new DocumentService(db, storage, searchService, approvalEvaluator, eventBus, audit);
+    service = new DocumentService(
+      db,
+      storage,
+      searchService,
+      approvalEvaluator,
+      eventBus,
+      audit,
+      new RealOcrProvider(aiRouter, prompts),
+    );
   });
 
   afterAll(async () => {

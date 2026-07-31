@@ -18,16 +18,17 @@ import { RedisStreamsEventBus } from '@platform/event-bus';
 import {
   LegacyApprovalRuleSource,
   NativeRuleSource,
-  NotImplementedAiDecisionProvider,
   RuleActionExecutor,
   RuleConflictResolver,
   RuleEvaluationService,
   RuleManagementService,
   RuleRepository,
 } from '@platform/rules-engine';
+import { RealAiDecisionProvider } from '@platform/ai';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
+import { buildAiRouter, buildPromptTemplateService } from '../../common/ai/ai-factory';
 import { CreateRuleDto, EvaluateRuleDto, UpdateRuleDto } from './dto/rule.dto';
 
 type AuthedRequest = Request & { user: JwtAccessTokenPayload };
@@ -38,7 +39,10 @@ const repository = new RuleRepository(prisma);
 const managementService = new RuleManagementService(prisma, repository);
 const actionExecutor = new RuleActionExecutor({
   eventBus,
-  aiDecisionProvider: new NotImplementedAiDecisionProvider(),
+  aiDecisionProvider: new RealAiDecisionProvider(
+    buildAiRouter(prisma),
+    buildPromptTemplateService(prisma),
+  ),
 });
 const evaluationService = new RuleEvaluationService(repository, actionExecutor, [
   new LegacyApprovalRuleSource(prisma),

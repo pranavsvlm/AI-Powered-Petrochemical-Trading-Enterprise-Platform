@@ -5,11 +5,12 @@ import { RedisStreamsEventBus } from '@platform/event-bus';
 import {
   LegacyApprovalRuleSource,
   NativeRuleSource,
-  NotImplementedAiDecisionProvider,
   RuleActionExecutor,
   RuleEvaluationService,
   RuleRepository,
 } from '@platform/rules-engine';
+import { RealAiDecisionProvider } from '@platform/ai';
+import { buildAiRouter, buildPromptTemplateService } from '../common/ai/ai-factory';
 import {
   NodeExecutor,
   PdfKitDocumentGenerator,
@@ -37,11 +38,15 @@ import {
 async function main(): Promise<void> {
   const prisma = getPrismaClient();
   const eventBus = new RedisStreamsEventBus();
+  const aiDecisionProvider = new RealAiDecisionProvider(
+    buildAiRouter(prisma),
+    buildPromptTemplateService(prisma),
+  );
 
   const ruleRepository = new RuleRepository(prisma);
   const ruleActionExecutor = new RuleActionExecutor({
     eventBus,
-    aiDecisionProvider: new NotImplementedAiDecisionProvider(),
+    aiDecisionProvider,
   });
   const rulesEvaluation = new RuleEvaluationService(ruleRepository, ruleActionExecutor, [
     new LegacyApprovalRuleSource(prisma),
@@ -65,7 +70,7 @@ async function main(): Promise<void> {
         notificationService.send(input as never).then((n) => ({ notificationId: n.id })),
     },
     documentGenerator: new PdfKitDocumentGenerator(),
-    aiDecisionProvider: new NotImplementedAiDecisionProvider(),
+    aiDecisionProvider,
     enqueueDelay: (executionId, resumeAt) => resumeQueue.enqueue(executionId, resumeAt),
   });
   const executionEngine = new WorkflowExecutionEngine(nodeExecutor, prisma);

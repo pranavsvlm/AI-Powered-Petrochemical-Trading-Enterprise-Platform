@@ -1,14 +1,19 @@
 import { Module } from '@nestjs/common';
-import { ProductService } from '@modules/products';
+import {
+  ProductService,
+  RealAiPricingProvider,
+  RealAiProductExpertProvider,
+} from '@modules/products';
 import { RedisStreamsEventBus } from '@platform/event-bus';
 import {
   LegacyApprovalRuleSource,
   NativeRuleSource,
-  NotImplementedAiDecisionProvider,
   RuleActionExecutor,
   RuleEvaluationService,
   RuleRepository,
 } from '@platform/rules-engine';
+import { RealAiDecisionProvider } from '@platform/ai';
+import { PgVectorSearchProvider } from '@platform/search';
 import {
   ProductsController,
   CategoriesController,
@@ -17,6 +22,7 @@ import {
 } from './products.controller';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { buildAiRouter, buildPromptTemplateService } from '../../common/ai/ai-factory';
 
 @Module({
   controllers: [
@@ -35,7 +41,10 @@ import { AuditService } from '../../common/audit/audit.service';
         const ruleRepository = new RuleRepository(db);
         const ruleActionExecutor = new RuleActionExecutor({
           eventBus,
-          aiDecisionProvider: new NotImplementedAiDecisionProvider(),
+          aiDecisionProvider: new RealAiDecisionProvider(
+            buildAiRouter(db),
+            buildPromptTemplateService(db),
+          ),
         });
         const approvalEvaluator = new RuleEvaluationService(ruleRepository, ruleActionExecutor, [
           new LegacyApprovalRuleSource(db),
@@ -46,6 +55,30 @@ import { AuditService } from '../../common/audit/audit.service';
         return new ProductService(db, approvalEvaluator, eventBus, audit);
       },
       inject: [PrismaService, AuditService],
+    },
+    {
+      provide: RealAiPricingProvider,
+      useFactory: (prisma: PrismaService, productService: ProductService) =>
+        new RealAiPricingProvider(
+          buildAiRouter(prisma.client),
+          buildPromptTemplateService(prisma.client),
+          productService,
+        ),
+      inject: [PrismaService, ProductService],
+    },
+    {
+      provide: RealAiProductExpertProvider,
+      useFactory: (prisma: PrismaService, productService: ProductService) => {
+        const db = prisma.client;
+        const vectorSearch = new PgVectorSearchProvider(db, buildAiRouter(db));
+        return new RealAiProductExpertProvider(
+          buildAiRouter(db),
+          buildPromptTemplateService(db),
+          productService,
+          vectorSearch,
+        );
+      },
+      inject: [PrismaService, ProductService],
     },
   ],
   exports: [ProductService],

@@ -192,6 +192,22 @@ export class RequestApprovalDto {
   attributes?: Record<string, unknown>;
 }
 
+export class AiPricingRequestDto {
+  @IsOptional()
+  @IsString()
+  customerId?: string;
+
+  @IsNumber()
+  @Min(0)
+  quantity!: number;
+}
+
+export class AiProductExpertQuestionDto {
+  @IsString()
+  @IsNotEmpty()
+  question!: string;
+}
+
 export class DecideApprovalDto {
   @IsString()
   @IsNotEmpty()

@@ -12,12 +12,18 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { PermissionAction, type JwtAccessTokenPayload } from '@platform/types';
-import { ProductService } from '@modules/products';
+import {
+  ProductService,
+  RealAiPricingProvider,
+  RealAiProductExpertProvider,
+} from '@modules/products';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import {
   AddPackagingDto,
+  AiPricingRequestDto,
+  AiProductExpertQuestionDto,
   CreateAttributeDto,
   CreateCategoryDto,
   CreateProductDto,
@@ -33,7 +39,11 @@ type AuthedRequest = Request & { user: JwtAccessTokenPayload };
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('products')
 export class ProductsController {
-  constructor(private readonly products: ProductService) {}
+  constructor(
+    private readonly products: ProductService,
+    private readonly aiPricingProvider: RealAiPricingProvider,
+    private readonly aiProductExpertProvider: RealAiProductExpertProvider,
+  ) {}
 
   @RequirePermission('products', PermissionAction.CREATE)
   @Post()
@@ -141,6 +151,22 @@ export class ProductsController {
       quantity: Number(quantity),
       currency,
     });
+  }
+
+  @RequirePermission('products', PermissionAction.EXECUTE_AI)
+  @Post(':id/ai-pricing')
+  aiPricing(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AiPricingRequestDto) {
+    return this.aiPricingProvider.recommend({
+      productId: id,
+      customerId: dto.customerId,
+      quantity: dto.quantity,
+    });
+  }
+
+  @RequirePermission('products', PermissionAction.EXECUTE_AI)
+  @Post(':id/ai-expert')
+  aiExpert(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AiProductExpertQuestionDto) {
+    return this.aiProductExpertProvider.ask({ productId: id, question: dto.question });
   }
 }
 

@@ -7,7 +7,7 @@ import type {
   DocumentVersion,
   DocumentApproval,
 } from '@platform/database';
-import type { StoragePort, StorageModule } from '@platform/storage';
+import type { StoragePort, StorageModule, OcrProvider, OcrResult } from '@platform/storage';
 import { buildStorageKey } from '@platform/storage';
 import type { SearchService, SearchMode } from '@platform/search';
 import { computeSha256 } from '../domain/document-hash';
@@ -88,6 +88,7 @@ export class DocumentService {
     private readonly approvalEvaluator: ApprovalEvaluator,
     private readonly events: DocumentEventPublisher,
     private readonly audit: DocumentAuditWriter,
+    private readonly ocrProvider: OcrProvider,
   ) {
     this.repo = new DocumentRepository(db);
   }
@@ -227,6 +228,14 @@ export class DocumentService {
     const doc = await this.repo.findById(id);
     if (!doc) throw new NotFoundException('Document not found.');
     return doc;
+  }
+
+  /** OCR seam (doc 21) — see docs/DOMAIN_MODEL_PHASE6.md §9. Runs against the latest version's stored bytes; does not persist the result or feed it into search indexing. */
+  async extractText(documentId: string): Promise<OcrResult> {
+    const latest = await this.repo.getLatestVersion(documentId);
+    if (!latest) throw new NotFoundException('Document has no versions to run OCR against.');
+    const { body } = await this.storage.download(latest.storageKey);
+    return this.ocrProvider.extractText(body, latest.contentType);
   }
 
   async updateMetadata(
