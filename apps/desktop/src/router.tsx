@@ -29,6 +29,12 @@ import {
   SupplierBillListPage,
   ReportsPage,
 } from '@modules/accounting/ui';
+import {
+  AiChatPage,
+  AiExecutionListPage,
+  AiExecutionDetailPage,
+  AiProviderSettingsPage,
+} from '@modules/ai/ui';
 import { Layout } from './Layout';
 import { LoginPage } from './pages/LoginPage';
 import { RequireAuth } from './RequireAuth';
@@ -76,6 +82,10 @@ export const router: ReturnType<typeof createHashRouter> = createHashRouter([
       { path: 'invoices/:id', element: <InvoiceDetailPage /> },
       { path: 'supplier-bills', element: <SupplierBillListPage /> },
       { path: 'reports', element: <ReportsPage /> },
+      { path: 'ai', element: <AiChatPage /> },
+      { path: 'ai/executions', element: <AiExecutionListPage /> },
+      { path: 'ai/executions/:id', element: <AiExecutionDetailPage /> },
+      { path: 'ai/providers', element: <AiProviderSettingsPage /> },
     ],
   },
 ]);

@@ -183,6 +183,9 @@ importers:
       '@modules/accounting':
         specifier: workspace:*
         version: link:../../modules/accounting
+      '@modules/ai':
+        specifier: workspace:*
+        version: link:../../modules/ai
       '@modules/customers':
         specifier: workspace:*
         version: link:../../modules/customers
@@ -336,6 +339,15 @@ importers:
       '@platform/types':
         specifier: workspace:*
         version: link:../../packages/types
+      '@platform/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-router-dom:
+        specifier: ^6.27.0
+        version: 6.30.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
     devDependencies:
       '@types/jest':
         specifier: ^29.5.13
@@ -343,6 +355,9 @@ importers:
       '@types/node':
         specifier: ^20.16.11
         version: 20.19.43
+      '@types/react':
+        specifier: ^18.3.11
+        version: 18.3.31
       jest:
         specifier: ^29.7.0
         version: 29.7.0(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))

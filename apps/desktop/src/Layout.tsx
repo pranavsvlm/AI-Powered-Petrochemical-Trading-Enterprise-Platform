@@ -16,6 +16,9 @@ const NAV_ITEMS = [
   { to: '/invoices', label: 'Invoices' },
   { to: '/supplier-bills', label: 'Supplier Bills' },
   { to: '/reports', label: 'Reports' },
+  { to: '/ai', label: 'AI Assistant' },
+  { to: '/ai/executions', label: 'AI Executions' },
+  { to: '/ai/providers', label: 'AI Providers' },
 ];
 
 export function Layout() {

@@ -1,12 +1,24 @@
 import { Prisma } from '@platform/database';
 import type {
   TenantScopedPrismaClient,
+  Agent,
   AgentExecution,
   AgentExecutionStatus,
   ApprovalRequest,
+  Tool,
   ToolExecution,
   ToolExecutionStatus,
 } from '@platform/database';
+
+/** `AgentExecution` plus its resolved `agent` — what list views need without a per-row lookup. */
+export interface AgentExecutionWithAgent extends AgentExecution {
+  agent: Agent;
+}
+
+/** `AgentExecutionWithAgent` plus the full ordered `toolExecutions` (each with its `tool`) — the audit trail a detail view renders. */
+export interface AgentExecutionWithTrail extends AgentExecutionWithAgent {
+  toolExecutions: Array<ToolExecution & { tool: Tool }>;
+}
 
 export interface CreateAgentExecutionInput {
   companyId: string;
@@ -83,18 +95,31 @@ export class AgentExecutionService {
     });
   }
 
-  findExecution(id: string): Promise<AgentExecution | null> {
-    return this.prisma.agentExecution.findUnique({ where: { id } });
+  /**
+   * Includes `agent` + the full `toolExecutions` (with their `tool`) trail — the UI's execution
+   * detail page needs both to render "which agent" and the tool-call audit trail without a
+   * second round trip.
+   */
+  findExecution(id: string): Promise<AgentExecutionWithTrail | null> {
+    return this.prisma.agentExecution.findUnique({
+      where: { id },
+      include: {
+        agent: true,
+        toolExecutions: { include: { tool: true }, orderBy: { createdAt: 'asc' } },
+      },
+    }) as Promise<AgentExecutionWithTrail | null>;
   }
 
+  /** Includes `agent` (name/key) so list rows don't need a per-row lookup. */
   listExecutions(
     filters: { agentId?: string; status?: AgentExecutionStatus } = {},
-  ): Promise<AgentExecution[]> {
+  ): Promise<AgentExecutionWithAgent[]> {
     return this.prisma.agentExecution.findMany({
       where: { agentId: filters.agentId, status: filters.status },
       orderBy: { createdAt: 'desc' },
       take: 100,
-    });
+      include: { agent: true },
+    }) as Promise<AgentExecutionWithAgent[]>;
   }
 
   createToolExecution(input: CreateToolExecutionInput): Promise<ToolExecution> {

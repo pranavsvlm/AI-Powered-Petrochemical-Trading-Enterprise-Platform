@@ -8,6 +8,7 @@ import type {
   AiProviderKind,
   Memory,
   MemoryScopeType,
+  Tool,
 } from '@platform/database';
 import {
   AGENT_DEFINITIONS,
@@ -16,6 +17,8 @@ import {
   AgentExecutionNotResumableError,
   AgentNotFoundError,
   type AgentExecutionService,
+  type AgentExecutionWithAgent,
+  type AgentExecutionWithTrail,
   type AgentOrchestratorService,
   type AgentRegistryService,
   type AiProviderConfigRepository,
@@ -23,6 +26,11 @@ import {
   type ToolRegistryService,
   type UpsertAiProviderConfigInput,
 } from '@platform/ai';
+
+/** `Agent` plus its capabilities resolved to full `Tool` rows — lets the chat UI show human-readable tool names/descriptions instead of raw dotted `Tool.key` strings. */
+export interface AgentWithTools extends Agent {
+  tools: Tool[];
+}
 
 /**
  * Thin NestJS-idiomatic façade over packages/ai's Agent SDK — the real domain logic lives in
@@ -55,10 +63,12 @@ export class AiFacadeService implements OnModuleInit {
     return this.agentRegistry.list();
   }
 
-  async getAgent(key: string): Promise<Agent> {
+  async getAgent(key: string): Promise<AgentWithTools> {
     const agent = await this.agentRegistry.findByKey(key);
     if (!agent) throw new NotFoundException(`Agent "${key}" not found.`);
-    return agent;
+    const capabilities = Array.isArray(agent.capabilities) ? (agent.capabilities as string[]) : [];
+    const tools = await this.toolRegistry.findManyByKeys(capabilities);
+    return { ...agent, tools };
   }
 
   async run(
@@ -115,11 +125,11 @@ export class AiFacadeService implements OnModuleInit {
 
   listExecutions(
     filters: { agentId?: string; status?: AgentExecutionStatus } = {},
-  ): Promise<AgentExecution[]> {
+  ): Promise<AgentExecutionWithAgent[]> {
     return this.executionService.listExecutions(filters);
   }
 
-  async getExecution(id: string): Promise<AgentExecution> {
+  async getExecution(id: string): Promise<AgentExecutionWithTrail> {
     const execution = await this.executionService.findExecution(id);
     if (!execution) throw new NotFoundException(`AgentExecution "${id}" not found.`);
     return execution;

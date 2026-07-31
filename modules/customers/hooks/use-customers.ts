@@ -33,6 +33,11 @@ export interface TimelineEntry {
   after?: unknown;
 }
 
+export interface CustomerProfileInsight {
+  summary: string;
+  recommendedActions: string[];
+}
+
 export interface CreateCustomerInput {
   customerCode: string;
   legalName: string;
@@ -109,6 +114,15 @@ export function useRequestCustomerApproval() {
   const api = useApiClient();
   return useCallback(
     (customerId: string) => api.post(`/customers/${customerId}/request-approval`, {}),
+    [api],
+  );
+}
+
+export function useCustomerAiAnalysis() {
+  const api = useApiClient();
+  return useCallback(
+    (customerId: string) =>
+      api.post<CustomerProfileInsight>(`/customers/${customerId}/ai-analysis`, {}),
     [api],
   );
 }

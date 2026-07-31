@@ -5,8 +5,10 @@
     "moduleResolution": "Node",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "outDir": "dist",
     "rootDir": "."
   },
-  "include": ["application", "api"]
+  "include": ["application", "api", "hooks", "ui"]
 }

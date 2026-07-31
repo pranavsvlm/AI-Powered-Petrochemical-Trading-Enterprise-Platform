@@ -19,6 +19,7 @@ import {
   ChatDto,
   DecideExecutionDto,
   ExecuteDto,
+  ListExecutionsQueryDto,
   ListMemoryQueryDto,
   UpsertProviderDto,
 } from './dto/ai.dto';
@@ -62,8 +63,8 @@ export class AiController {
 
   @RequirePermission('ai', PermissionAction.VIEW)
   @Get('executions')
-  listExecutions() {
-    return this.ai.listExecutions();
+  listExecutions(@Query() dto: ListExecutionsQueryDto) {
+    return this.ai.listExecutions({ status: dto.status });
   }
 
   @RequirePermission('ai', PermissionAction.VIEW)

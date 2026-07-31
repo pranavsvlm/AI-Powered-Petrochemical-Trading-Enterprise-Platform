@@ -28,6 +28,16 @@ export interface PriceListEntry {
   unitPrice: string;
 }
 
+export interface PricingRecommendation {
+  recommendedUnitPrice: number;
+  rationale: string;
+}
+
+export interface ProductExpertAnswer {
+  answer: string;
+  confidence: number;
+}
+
 export interface CreateProductInput {
   sku: string;
   name: string;
@@ -109,6 +119,24 @@ export function useRequestProductApproval() {
   const api = useApiClient();
   return useCallback(
     (productId: string) => api.post(`/products/${productId}/request-approval`, {}),
+    [api],
+  );
+}
+
+export function useProductAiPricing() {
+  const api = useApiClient();
+  return useCallback(
+    (productId: string, input: { customerId?: string; quantity: number }) =>
+      api.post<PricingRecommendation>(`/products/${productId}/ai-pricing`, input),
+    [api],
+  );
+}
+
+export function useProductAiExpert() {
+  const api = useApiClient();
+  return useCallback(
+    (productId: string, question: string) =>
+      api.post<ProductExpertAnswer>(`/products/${productId}/ai-expert`, { question }),
     [api],
   );
 }

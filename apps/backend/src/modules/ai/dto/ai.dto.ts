@@ -2,6 +2,13 @@ import { IsBoolean, IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from
 
 const MEMORY_SCOPE_TYPES = ['COMPANY', 'CUSTOMER', 'USER', 'CONVERSATION', 'TASK'] as const;
 const AI_PROVIDER_KINDS = ['OPENAI', 'ANTHROPIC', 'GEMINI', 'OLLAMA'] as const;
+const AGENT_EXECUTION_STATUSES = [
+  'RUNNING',
+  'AWAITING_APPROVAL',
+  'COMPLETED',
+  'FAILED',
+  'CANCELLED',
+] as const;
 
 export class ChatDto {
   @IsString()
@@ -31,6 +38,12 @@ export class DecideExecutionDto {
   @IsOptional()
   @IsString()
   comment?: string;
+}
+
+export class ListExecutionsQueryDto {
+  @IsOptional()
+  @IsIn(AGENT_EXECUTION_STATUSES)
+  status?: (typeof AGENT_EXECUTION_STATUSES)[number];
 }
 
 export class ListMemoryQueryDto {

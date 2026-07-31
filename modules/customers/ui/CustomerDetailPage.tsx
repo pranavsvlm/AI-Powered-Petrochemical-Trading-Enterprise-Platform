@@ -3,8 +3,10 @@ import { Link, useParams } from 'react-router-dom';
 import {
   useAddContact,
   useCustomer,
+  useCustomerAiAnalysis,
   useCustomerTimeline,
   useTransitionCustomerStatus,
+  type CustomerProfileInsight,
 } from '../hooks/use-customers';
 
 const NEXT_STATUS: Record<string, string[]> = {
@@ -21,11 +23,14 @@ export function CustomerDetailPage() {
   const { data: timeline } = useCustomerTimeline(id!);
   const transition = useTransitionCustomerStatus();
   const addContact = useAddContact();
+  const requestAiAnalysis = useCustomerAiAnalysis();
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [aiInsight, setAiInsight] = useState<CustomerProfileInsight | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   async function handleTransition(status: string) {
     setActionError(null);
@@ -34,6 +39,18 @@ export function CustomerDetailPage() {
       refetch();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Transition failed.');
+    }
+  }
+
+  async function handleAiAnalysis() {
+    setActionError(null);
+    setAiLoading(true);
+    try {
+      setAiInsight(await requestAiAnalysis(id!));
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'AI analysis failed.');
+    } finally {
+      setAiLoading(false);
     }
   }
 
@@ -127,6 +144,27 @@ export function CustomerDetailPage() {
             {new Date(entry.createdAt).toLocaleString()}
           </p>
         ))}
+      </div>
+
+      <div className="card">
+        <h3>AI Analysis</h3>
+        <div className="button-row">
+          <button onClick={handleAiAnalysis} disabled={aiLoading}>
+            {aiLoading ? 'Analyzing…' : 'Get AI analysis'}
+          </button>
+        </div>
+        {aiInsight && (
+          <>
+            <p>{aiInsight.summary}</p>
+            {aiInsight.recommendedActions.length > 0 && (
+              <ul>
+                {aiInsight.recommendedActions.map((action, i) => (
+                  <li key={i}>{action}</li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
