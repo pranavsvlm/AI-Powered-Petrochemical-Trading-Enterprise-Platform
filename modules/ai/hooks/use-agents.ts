@@ -50,5 +50,8 @@ export function useAgents() {
 
 export function useAgent(key: string | undefined) {
   const api = useApiClient();
-  return useAsync<AgentWithTools>(() => api.get(`/ai/agents/${key}`), [key]);
+  return useAsync<AgentWithTools | null>(
+    () => (key ? api.get<AgentWithTools>(`/ai/agents/${key}`) : Promise.resolve(null)),
+    [key],
+  );
 }
