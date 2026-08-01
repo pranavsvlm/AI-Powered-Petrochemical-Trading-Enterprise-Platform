@@ -650,3 +650,219 @@ insufficient-data guard), `domain/csv-serializer.spec.ts` (comma/quote/newline e
 Full monorepo typecheck and `pnpm --filter backend build` clean on the first pass. All 5 new e2e specs pass
 (15/15 tests) against real Postgres/Redis/MinIO/Ollama. Full-suite regression run and desktop UI are the
 next steps — see the top-level checkpoint before starting the UI pass, same sequence every prior phase used.
+
+## Human Resources (doc 15) — Phase 7d
+
+### 1. Scope: what doc 15 actually asked for vs. what shipped
+
+Doc 15 covers Employee Management, Organization (Department/Team, already owned by Phase 1), Attendance,
+Leave, Payroll ("Architecture Ready" — the doc's own words, not a scoping call made here), Recruitment,
+Performance, Training, Assets, and an AI HR Assistant. This is the fourth and final Phase 7 sub-module, and
+follows the same "real, working core in one pass, not the full wishlist" discipline as Tasks/Communication/
+Analytics before it.
+
+**Shipped**: `Employee` as the core aggregate — a real 1:1 link to `User`, real references to the
+already-existing `Department`/`Team`/`Branch` models (never rebuilt), a self-referential manager link for
+reporting hierarchy, job title, employment type/status, hire/termination dates. Real **Attendance**
+(clock-in/clock-out against real `Shift` definitions, worked/overtime hours computed on demand). Real
+**Leave** (`LeavePolicy`/`LeaveRequest`) with approval delegated entirely to the existing Rules Engine and
+the existing generic `ApprovalRequest` table — no new approval mechanism. **Payroll**, shipped exactly as
+"architecture ready": a real `PayrollProfile` salary-structure row (base salary, currency, allowances,
+deductions, effective date) with no payroll-run computation or payslip generation, matching the doc's own
+label for this section. Real **Performance** (`PerformanceReview`), **Training** (`TrainingRecord`), and
+**Assets** (`EmployeeAsset`) CRUD. A 5th AI agent, the **HR Assistant**, read-only Q&A over employee lookup,
+leave balance, and team roster.
+
+**Deferred, not silently dropped**:
+
+- **Recruitment** (`RecruitmentJob`/`Candidate`/`Interview`) — a genuinely separate pre-employment lifecycle
+  with zero integration dependency on the rest of HR; doc 15's own Employee Dashboard section doesn't even
+  list it (Profile/Attendance/Leave Balance/Tasks/Training/Performance/Assigned Assets/AI Recommendations —
+  no Recruitment). The cleanest, most self-contained cut available.
+- **Payroll runs and payslip generation** — doc 15 itself labels Payroll "(Architecture Ready)," not asking
+  for a working computation engine yet; a real salary-structure row ships, nothing more.
+- **Holiday calendar** — no holiday-aware attendance-exemption logic without one; deferred alongside a
+  future Attendance enhancement pass, the same "don't invent a formula with no defined business input"
+  reasoning Analytics used for its own deferrals.
+- **Training expiry reminders** — `TrainingRecord.expiresAt` is a real field this pass ships and reads from,
+  but the scheduled-notification job that would watch it (the same `node-cron` shape `ReportSchedule`
+  already uses) is a follow-up, not core.
+- **AI write-actions** (draft offer letters, auto-recommend leave approvals) — the HR Assistant stays
+  read-only Q&A, matching every prior read-only agent's stance (Knowledge/Analytics); offer letters are
+  Recruitment's territory anyway, already deferred above.
+- **Branch CRUD** — a pre-existing gap from Company Management, not something doc 15 asks HR to fix;
+  `Employee.branchId` just references whatever `Branch` rows already exist.
+- **Employee documents/certifications as a bespoke HR upload flow** — reuses Document Management's existing
+  generic `entityType`/`entityId` attachment pattern directly; no HR-specific document schema.
+
+### 2. Naming and schema
+
+Module lives in `modules/hr` — the workspace's pre-existing empty skeleton, same starting point Analytics
+had with `modules/reports`. REST surface follows doc 15's own bare resource paths (`/employees`,
+`/attendance`, `/leave`, etc.), no `/hr` prefix, matching Tasks' `/tasks`/`/projects`/`/time-entries`
+convention — none of these path segments collide with anything existing.
+
+New enums: `EmploymentType` (`FULL_TIME`/`PART_TIME`/`CONTRACT`/`INTERN`), `EmploymentStatus`
+(`ACTIVE`/`ON_LEAVE`/`TERMINATED`) — deliberately kept separate from `UserStatus`, which is account/login
+state, not business employment state. `LeaveType` (`ANNUAL`/`SICK`/`UNPAID`/`CUSTOM`),
+`LeaveRequestStatus` (`PENDING`/`APPROVED`/`REJECTED`/`CANCELLED`).
+
+Nine real tenant-scoped aggregates, all added to `TENANT_SCOPED_MODELS`: `Employee` (`userId` unique 1:1 to
+`User`, `employeeNumber` unique per company, `departmentId?`/`teamId?`/`branchId?` real relations to the
+existing models, `managerId?` a self-relation — `"EmployeeManager"` — distinct from `Department.managerId`
+which points at a `User`, not an `Employee`), `Shift` (`startTime`/`endTime` stored as plain `"HH:MM"`
+strings, the same "simple string over a full recurrence model" reasoning `WorkflowTriggerScheduler`'s
+cron-string field already used), `AttendanceRecord` (mirrors `TimeEntry`'s start/stop shape from Phase 7a
+exactly), `LeavePolicy`, `LeaveRequest` (`status` default `PENDING`), `PayrollProfile` (`employeeId` unique
+— one active profile per employee), `PerformanceReview`, `TrainingRecord`, `EmployeeAsset`.
+
+New `AuditEventType` members matching doc 15's list: `EMPLOYEE_CREATED`, `EMPLOYEE_UPDATED`,
+`ATTENDANCE_RECORDED`, `LEAVE_REQUESTED`, `LEAVE_APPROVED`, `LEAVE_REJECTED`, `PAYROLL_PROFILE_UPDATED`,
+`PERFORMANCE_REVIEW_COMPLETED`, `ASSET_ASSIGNED`, `ASSET_RETURNED`, `TRAINING_RECORDED`.
+
+### 3. Employee — the core aggregate, referencing existing Org models rather than rebuilding them
+
+`EmployeeService.create()`/`.update()` validate `departmentId`/`teamId` against real narrow lookup ports
+(`DepartmentLookupPort`/`TeamLookupPort`), satisfied at `HrModule`'s composition root by two new one-line
+wrapper methods on the existing `UserService` (`getDepartmentById`/`getTeamById`) — never a direct import of
+`modules/users`' internals, the same narrow-port discipline `modules/quotations` established for
+`CustomerLookupPort`/`ProductLookupPort`. A cross-tenant `departmentId` reference is rejected with a real
+`BadRequestException`, confirmed by a dedicated e2e test that seeds a second company's `Department` and
+asserts the create call throws. `listDirectReports(managerId)` walks the `managerId` self-relation for the
+reporting-hierarchy view doc 15's Employee Dashboard asks for.
+
+### 4. Attendance — worked/overtime hours computed on demand, mirroring Tasks' TimeEntry shape
+
+`AttendanceService.clockIn()` rejects a second open record for the same employee (`BadRequestException`,
+the exact guard `TimeEntryService` already uses for its own start/stop pattern). `clockOut()` computes real
+worked hours from `clockOutAt - clockInAt` (`domain/attendance-hours.ts`'s `computeWorkedHours`, unit
+tested) and, given an optional shift-hours figure, real overtime via `computeOvertimeHours` — never a
+stored, driftable column. `parseShiftHours()` parses a `Shift`'s `"HH:MM"` pair into hours, handling
+overnight shifts (end time earlier than start time) correctly; validated before a `Shift` is ever inserted.
+
+### 5. Leave — approval delegated entirely to the existing Rules Engine, zero new approval mechanism
+
+`LeaveService.requestLeave()` follows `QuotationService.requestApproval()`'s exact shape: a narrow
+`ApprovalEvaluator` port (`evaluateApproval(companyId, 'hr', {leaveRequestId, employeeId, days})`), backed
+at the composition root by the same `RuleRepository`/`RuleActionExecutor`/`RuleEvaluationService` stack
+every prior approval-capable module already assembles. Zero matched approvers auto-approves the request
+immediately (`LEAVE_APPROVED` audit event, no `ApprovalRequest` row); one or more approvers creates a real
+`ApprovalRequest` row per approver (`entityType: 'LeaveRequest'`) in the same generic, polymorphic table
+Quotations/Documents already write to. `LeaveService.decide()` resolves a pending approval and finalizes the
+linked `LeaveRequest`'s status — confirmed end-to-end in the e2e spec by seeding a real `Rule` (via
+`RuleManagementService.create()`/`.publish()`, `module: 'hr'`) and asserting a real `ApprovalRequest` row is
+created, then resolved.
+
+`domain/leave-balance.ts`'s `computeLeaveBalance()` is a pure function: `daysPerYear` minus the summed
+inclusive day-span of this year's `APPROVED` requests for that policy — computed fresh on every read, the
+same "real computed report, not a cached counter that can drift" philosophy `AnalyticsKpiService` already
+established, never a stored mutable balance column.
+
+### 6. Payroll, Performance, Training, Assets — straightforward CRUD over real records
+
+`EmployeeRecordsService` bundles all four, the same single-service-per-related-record-group precedent
+`ProductService` already set for its own adjacent sub-resources. `setPayrollProfile()` is a real upsert (one
+active profile per employee, `PayrollProfile.employeeId` unique) — real `baseSalary`/`currency`/
+`allowances`/`deductions` persisted, no payroll-run computation attached (§1). `addPerformanceReview()`/
+`addTrainingRecord()`/`assignAsset()`/`returnAsset()` are straightforward create/list operations against
+real tables, each writing a real audit entry.
+
+### 7. AI HR Assistant — the 5th agent, same read-only precedent as Knowledge/Analytics
+
+`packages/ai/src/agent-sdk/domain/agents/hr-agent.definition.ts`, following `ANALYTICS_AGENT`'s exact shape:
+zero write-tools, `requiresHumanApproval: false` throughout. Three tools: `hr.getEmployee`,
+`hr.getLeaveBalance`, `hr.listTeamRoster`. Added to the shared `AGENT_DEFINITIONS`/`TOOL_DEFINITIONS`
+arrays in `packages/ai/src/agent-sdk/domain/agents/index.ts` alongside the existing 4, with a new
+`hr-agent.system-prompt` entry in `AGENT_SYSTEM_PROMPTS`. Bound in `apps/backend/src/modules/ai/ai.module.ts`'s
+existing `buildToolExecutor()` map, calling the new `HrModule`'s `EmployeeService`/`LeaveService` directly
+(both injected into `AiModule` via `imports: [..., HrModule]`) — never a direct cross-module import outside
+the composition root. `apps/backend/src/scripts/seed-ai-prompts.ts` was re-run after adding the new prompt
+key (confirmed output: `"1 new template(s), 1 version(s) published (12 total keys)"`) — the same
+already-learned lesson from Analytics that a system-prompt code constant has no effect until it's persisted
+as a `PromptTemplate` row. Natural-language HR questions go through the existing `POST /ai/chat` with
+`agentKey: 'hr-agent'` — no dedicated REST route, the same reasoning that avoided a circular module
+dependency for Analytics.
+
+### 8. RBAC and REST surface
+
+Single module string `'hr'`; doc 15's Permissions list (View/Create/Edit/Delete Employees, Approve Leave,
+Manage Payroll, Manage Recruitment [n/a — deferred], Manage Training, Use AI HR Assistant) collapses onto
+the existing `PermissionAction` enum with no new actions. Appended to `PHASE7_MODULES`
+(`['tasks', 'communication', 'analytics', 'hr']`) in `packages/permissions/src/rbac/seed-data.ts`.
+
+```
+GET/POST /employees                       [hr:view / hr:create]
+GET      /employees/:id                   [hr:view]
+PUT      /employees/:id                   [hr:edit]
+GET/POST /attendance                      [hr:view / hr:create]   — clock in
+POST     /attendance/:id/clock-out        [hr:edit]
+GET/POST /shifts                          [hr:view / hr:create]
+GET/POST /leave-policies                  [hr:view / hr:create]
+GET/POST /leave                           [hr:view / hr:create]
+GET      /leave/balance                   [hr:view]
+POST     /leave/approvals/:approvalId/decide [hr:approve]
+GET/POST /payroll-profiles                [hr:view / hr:manage_settings]
+GET/POST /performance-reviews             [hr:view / hr:create]
+GET/POST /training-records                [hr:view / hr:create]
+GET/POST /employee-assets                 [hr:view / hr:create]
+POST     /employee-assets/:id/return      [hr:edit]
+```
+
+`HrModule` follows the exact `useFactory` composition-root pattern `analytics.module.ts` established:
+imports `UsersModule` for the `DepartmentLookupPort`/`TeamLookupPort` wrappers, and builds the same
+`RuleRepository`/`RuleActionExecutor`/`RuleEvaluationService` approval-evaluator block every prior
+approval-capable module's `*.module.ts` already repeats.
+
+### 9. Testing
+
+Unit: `domain/leave-balance.spec.ts` (4 tests — day-span math, zero-approved-requests, balance
+computation), `domain/attendance-hours.spec.ts` (7 tests — worked-hours math, overtime math, `"HH:MM"`
+parsing including overnight shifts, the invalid-range guard). 11/11 passing.
+
+E2e (`apps/backend/test/`, real Postgres/Redis, plus live Ollama for the agent spec), 11/11 passing:
+
+- `hr-employee-lifecycle.e2e-spec.ts` (3 tests) — creates a real `Employee` linked to a real seeded
+  `User`/`Department`/`Team`/manager with a real audit entry; rejects a cross-tenant `Department` reference;
+  updates an `Employee` with a real audit entry.
+- `hr-attendance-and-leave.e2e-spec.ts` (3 tests) — real clock-in/clock-out with a real computed worked/
+  overtime figure (backdates `clockInAt` directly for a deterministic result); the zero-approvers
+  auto-approve path with a real computed balance (20 − 3 = 17); the real-`ApprovalRequest` path (seeds a
+  real `Rule`, asserts a real `ApprovalRequest` row, resolves it via `decide()`, asserts the real resulting
+  balance, 10 − 1 = 9).
+- `hr-performance-training-assets.e2e-spec.ts` (4 tests) — real `PayrollProfile` set/re-read
+  (architecture-ready only), real `PerformanceReview`/`TrainingRecord` create/list, real `EmployeeAsset`
+  assign/return/list.
+- `hr-nl-query-agent.e2e-spec.ts` (1 test) — a live-Ollama tool-calling test for the HR Assistant, matching
+  `analytics-nl-query-agent.e2e-spec.ts`'s exact shape: real orchestrator, a real `hr.getEmployee` tool
+  execution, a real `ToolExecution` row asserting `status: 'SUCCEEDED'`.
+
+### 10. Verification
+
+Full monorepo typecheck and `pnpm --filter backend build` clean on the first pass — no iteration needed on
+the application code itself; every backend bug found while building this sub-module was in test-authoring
+(missing `asCompany()` tenant-context wrapping around read calls, an audit-writer stub that never actually
+wrote anywhere), not the app. All 4 new e2e specs pass (11/11 tests) against real Postgres/Redis/Ollama,
+plus 11/11 domain unit tests. Full-suite regression run: 118/119 passing, 1 skipped, 0 failures.
+
+Desktop UI shipped in the same pass: `EmployeeListPage`/`EmployeeCreatePage`/`EmployeeDetailPage`
+(`modules/hr/ui`), routed at `/employees`, `/employees/new`, `/employees/:id`. The detail page bundles
+Attendance (clock-in/out), Leave (inline policy creation, balance, request, and decide-approval per
+pending request), Payroll, Performance, Training, and Assets into one page of cards — the same
+multi-card-per-entity shape `ProjectDetailPage` already established, and matching doc 15's own "Employee
+Dashboard" framing (Profile/Attendance/Leave Balance/Training/Performance/Assigned Assets in one view; "AI
+Recommendations" needs no bespoke widget since the existing `/ai` chat page already lists every registered
+agent, HR Assistant included). One small, real backend addition was needed to make Leave approval usable
+beyond a single browser session: `GET /leave/:id/approvals` (`LeaveService.listPendingApprovals()` /
+`LeaveRequestRepository.findPendingApprovals()`) — `QuotationDetailPage` had accepted a same-session-only
+approval-decision limitation for lack of exactly this endpoint; HR closes that gap instead of repeating it.
+Department/Team dropdowns reuse the existing `GET /departments`/`GET /teams` endpoints directly, no new
+lookup UI. `hr:*` permissions (12 actions) granted to the Demo Admin role via the established seed +
+direct-SQL-grant pattern. Browser-verified via headless Chrome/Playwright: full walkthrough — create
+employee, clock in/out with real computed hours, create a leave policy, request leave (real auto-approve
+path, real balance decrement), set a payroll profile, add a performance review, add a training record,
+assign and return an asset — completed with zero console/network errors. One real UI bug was caught and
+fixed during this pass: the leave-policy-creation form never refetched the policy list, so a newly created
+policy would not appear in the request-leave dropdown until a full page reload.
+
+This closes out Phase 7 backend and UI work entirely (Tasks/Communication/Analytics/HR all shipped and
+browser-verified).

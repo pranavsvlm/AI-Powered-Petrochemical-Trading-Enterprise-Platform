@@ -148,11 +148,19 @@ export class UserService {
     return this.departments.list();
   }
 
+  getDepartmentById(id: string): Promise<Department | null> {
+    return this.departments.getById(id);
+  }
+
   createTeam(companyId: string, departmentId: string, name: string): Promise<Team> {
     return this.teams.create(companyId, departmentId, name);
   }
 
   listTeams(): Promise<Team[]> {
     return this.teams.list();
+  }
+
+  getTeamById(id: string): Promise<Team | null> {
+    return this.teams.getById(id);
   }
 }

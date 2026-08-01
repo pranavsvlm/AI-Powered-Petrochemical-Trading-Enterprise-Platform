@@ -88,7 +88,7 @@ const PHASE6_MODULES = ['ai'];
  * Time", etc.) collapses onto the existing PermissionAction enum with no new actions needed,
  * same as every prior phase.
  */
-const PHASE7_MODULES = ['tasks', 'communication', 'analytics'];
+const PHASE7_MODULES = ['tasks', 'communication', 'analytics', 'hr'];
 
 export const SEED_PERMISSIONS = [
   ...PHASE1_MODULES,

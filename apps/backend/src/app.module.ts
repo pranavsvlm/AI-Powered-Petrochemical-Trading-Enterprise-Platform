@@ -23,6 +23,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { CommsModule } from './modules/comms/comms.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { HrModule } from './modules/hr/hr.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     TasksModule,
     CommsModule,
     AnalyticsModule,
+    HrModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -56,6 +56,10 @@ export class DepartmentRepository {
   list(): Promise<Department[]> {
     return this.db.department.findMany();
   }
+
+  getById(id: string): Promise<Department | null> {
+    return this.db.department.findUnique({ where: { id } });
+  }
 }
 
 export class TeamRepository {
@@ -67,5 +71,9 @@ export class TeamRepository {
 
   list(): Promise<Team[]> {
     return this.db.team.findMany();
+  }
+
+  getById(id: string): Promise<Team | null> {
+    return this.db.team.findUnique({ where: { id } });
   }
 }

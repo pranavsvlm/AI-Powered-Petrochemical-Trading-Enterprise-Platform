@@ -3,24 +3,27 @@ import { SALES_AGENT, SALES_AGENT_TOOLS } from './sales-agent.definition';
 import { INVENTORY_AGENT, INVENTORY_AGENT_TOOLS } from './inventory-agent.definition';
 import { KNOWLEDGE_AGENT, KNOWLEDGE_AGENT_TOOLS } from './knowledge-agent.definition';
 import { ANALYTICS_AGENT, ANALYTICS_AGENT_TOOLS } from './analytics-agent.definition';
+import { HR_AGENT, HR_AGENT_TOOLS } from './hr-agent.definition';
 
 export * from './sales-agent.definition';
 export * from './inventory-agent.definition';
 export * from './knowledge-agent.definition';
 export * from './analytics-agent.definition';
+export * from './hr-agent.definition';
 
 /**
  * The representative agents this phase ships — see docs/DOMAIN_MODEL_PHASE6.md §12 for why the
  * original 3 (not all 11-15 doc 26 names) were chosen, and for the note that every other
  * doc-26-named agent is pluggable into this same AgentDefinition/ToolDefinition shape later
- * with zero architecture changes. `ANALYTICS_AGENT` (Phase 7c, doc 20) is the first of those
- * pluggable additions, added the same way.
+ * with zero architecture changes. `ANALYTICS_AGENT` (Phase 7c, doc 20) and `HR_AGENT` (Phase 7d,
+ * doc 15) are the first two of those pluggable additions, added the same way.
  */
 export const AGENT_DEFINITIONS: AgentDefinition[] = [
   SALES_AGENT,
   INVENTORY_AGENT,
   KNOWLEDGE_AGENT,
   ANALYTICS_AGENT,
+  HR_AGENT,
 ];
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -28,6 +31,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ...INVENTORY_AGENT_TOOLS,
   ...KNOWLEDGE_AGENT_TOOLS,
   ...ANALYTICS_AGENT_TOOLS,
+  ...HR_AGENT_TOOLS,
 ];
 
 /**
@@ -57,5 +61,11 @@ Be concise and cite which document(s) you used when relevant.`,
   'analytics-agent.system-prompt': `You are an Analytics Assistant for a petrochemical trading company, answering questions about business KPIs, dashboards, and forecasts.
 Use the query tools to fetch real computed figures — never invent a number that didn't come from a tool result.
 Pick the dashboard section (executive, sales, trading, finance, inventory, procurement, or ai) that best matches the question; call getForecast for revenue-projection questions.
+Be concise and factual. If the available data doesn't answer the question, say so plainly rather than guessing.`,
+
+  'hr-agent.system-prompt': `You are an HR Assistant for a petrochemical trading company, answering questions about employees, leave balances, and team rosters.
+Use the tools you have been given to look up real employee records — never invent details about a person or their leave balance.
+You can look up an employee's profile, compute their remaining leave balance for a policy, or list who reports to a given manager.
+You cannot approve leave, change an employee's record, or take any other action — you only answer questions.
 Be concise and factual. If the available data doesn't answer the question, say so plainly rather than guessing.`,
 };

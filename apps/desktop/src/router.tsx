@@ -45,6 +45,7 @@ import {
 } from '@modules/tasks/ui';
 import { ThreadListPage, ThreadDetailPage, ThreadCreatePage } from '@modules/communication/ui';
 import { AnalyticsDashboardPage, AnalyticsReportsPage } from '@modules/reports/ui';
+import { EmployeeListPage, EmployeeCreatePage, EmployeeDetailPage } from '@modules/hr/ui';
 import { Layout } from './Layout';
 import { LoginPage } from './pages/LoginPage';
 import { RequireAuth } from './RequireAuth';
@@ -107,6 +108,9 @@ export const router: ReturnType<typeof createHashRouter> = createHashRouter([
       { path: 'comms/:id', element: <ThreadDetailPage /> },
       { path: 'analytics', element: <AnalyticsDashboardPage /> },
       { path: 'analytics/reports', element: <AnalyticsReportsPage /> },
+      { path: 'employees', element: <EmployeeListPage /> },
+      { path: 'employees/new', element: <EmployeeCreatePage /> },
+      { path: 'employees/:id', element: <EmployeeDetailPage /> },
     ],
   },
 ]);

@@ -32,6 +32,7 @@ import { InventoryService } from '@modules/inventory';
 import { SupplierService, RequisitionService, PurchaseOrderService } from '@modules/procurement';
 import { DocumentService } from '@modules/document-management';
 import { AnalyticsKpiService, AnalyticsForecastService } from '@modules/reports';
+import { EmployeeService, LeaveService } from '@modules/hr';
 import { AiController } from './ai.controller';
 import { CustomersModule } from '../customers/customers.module';
 import { ProductsModule } from '../products/products.module';
@@ -40,6 +41,7 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { ProcurementModule } from '../procurement/procurement.module';
 import { DocumentsModule } from '../documents/documents.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
+import { HrModule } from '../hr/hr.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { buildAiRouter, buildPromptTemplateService } from '../../common/ai/ai-factory';
 
@@ -62,6 +64,8 @@ function buildToolExecutor(deps: {
   documents: DocumentService;
   analyticsKpis: AnalyticsKpiService;
   analyticsForecasts: AnalyticsForecastService;
+  employees: EmployeeService;
+  leave: LeaveService;
 }): ToolExecutor {
   const handlers: Record<
     string,
@@ -171,6 +175,13 @@ function buildToolExecutor(deps: {
     },
     'analytics.getForecast': (_input, ctx) =>
       deps.analyticsForecasts.getLatestSalesForecast(ctx.companyId),
+
+    'hr.getEmployee': (input) => deps.employees.getById(input.employeeId as string),
+    'hr.getLeaveBalance': (input) =>
+      deps.leave
+        .getBalance(input.employeeId as string, input.policyId as string)
+        .then((balance) => ({ balance })),
+    'hr.listTeamRoster': (input) => deps.employees.listDirectReports(input.managerId as string),
   };
 
   return {
@@ -191,6 +202,7 @@ function buildToolExecutor(deps: {
     ProcurementModule,
     DocumentsModule,
     AnalyticsModule,
+    HrModule,
   ],
   controllers: [AiController],
   providers: [
@@ -208,6 +220,8 @@ function buildToolExecutor(deps: {
         documents: DocumentService,
         analyticsKpis: AnalyticsKpiService,
         analyticsForecasts: AnalyticsForecastService,
+        employees: EmployeeService,
+        leave: LeaveService,
       ) => {
         const db = prisma.client;
         const aiRouter = buildAiRouter(db);
@@ -253,6 +267,8 @@ function buildToolExecutor(deps: {
           documents,
           analyticsKpis,
           analyticsForecasts,
+          employees,
+          leave,
         });
 
         const orchestrator = new AgentOrchestratorService({
@@ -289,6 +305,8 @@ function buildToolExecutor(deps: {
         DocumentService,
         AnalyticsKpiService,
         AnalyticsForecastService,
+        EmployeeService,
+        LeaveService,
       ],
     },
   ],

@@ -24,6 +24,7 @@ const NAV_ITEMS = [
   { to: '/comms', label: 'Communication' },
   { to: '/analytics', label: 'Analytics' },
   { to: '/analytics/reports', label: 'Analytics Reports' },
+  { to: '/employees', label: 'Employees' },
 ];
 
 export function Layout() {
