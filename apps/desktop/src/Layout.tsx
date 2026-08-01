@@ -19,6 +19,8 @@ const NAV_ITEMS = [
   { to: '/ai', label: 'AI Assistant' },
   { to: '/ai/executions', label: 'AI Executions' },
   { to: '/ai/providers', label: 'AI Providers' },
+  { to: '/tasks', label: 'Tasks' },
+  { to: '/projects', label: 'Projects' },
 ];
 
 export function Layout() {
