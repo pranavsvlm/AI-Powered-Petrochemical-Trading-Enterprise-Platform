@@ -9,6 +9,7 @@ import {
 import { Response } from 'express';
 import { Prisma } from '@platform/database';
 import { ChannelNotAvailableError } from '@platform/notifications';
+import { InsufficientForecastDataError } from '@modules/reports';
 
 interface ErrorResponseBody {
   statusCode: number;
@@ -55,7 +56,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         error = 'Bad Request';
         message = 'The request could not be processed.';
       }
-    } else if (exception instanceof ChannelNotAvailableError) {
+    } else if (
+      exception instanceof ChannelNotAvailableError ||
+      exception instanceof InsufficientForecastDataError
+    ) {
       status = HttpStatus.BAD_REQUEST;
       error = 'Bad Request';
       message = exception.message;

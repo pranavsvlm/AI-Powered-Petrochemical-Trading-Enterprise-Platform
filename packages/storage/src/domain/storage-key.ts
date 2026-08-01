@@ -8,6 +8,7 @@ export const STORAGE_MODULES = [
   'trading',
   'knowledge',
   'company',
+  'analytics',
 ] as const;
 
 export type StorageModule = (typeof STORAGE_MODULES)[number];

@@ -391,3 +391,262 @@ closing a thread. The demo company's `Demo Admin` role needed its `RolePermissio
 newly-seeded `communication:*` permissions (this platform has no company-admin auto-sync — see the RBAC
 seed script note; every module's permissions are granted to existing roles as a one-time manual step,
 not automatically).
+
+## Analytics & Business Intelligence (doc 20) — Phase 7c
+
+### 1. Scope: what doc 20 actually asked for vs. what shipped
+
+Doc 20 is the widest-scoped doc in the whole roadmap — executive dashboards, per-domain analytics across
+Sales/Trading/Finance/Inventory/Procurement/HR/AI, AI-generated insights, forecasting across five domains,
+natural-language querying, and scheduled PDF/Excel/CSV report emailing, drawing on data from nearly every
+other module. The user explicitly chose to scope this down to a **real, working core in one pass** rather
+than splitting it further (confirmed via AskUserQuestion before implementation started), the same "ship a
+coherent slice, not the full wishlist" discipline every phase before it has used.
+
+**Shipped**: live-computed dashboards (Executive/Sales/Trading/Finance/Inventory/Procurement/AI) built from
+real Prisma `groupBy`/`aggregate` queries (or a real fetch + in-memory reduce, the same technique
+Accounting's own `aggregateTrialBalance` already uses, when Prisma can't express the computation in one
+query) over existing tables — no data faked, no placeholder numbers. `AnalyticsSnapshot` persists periodic
+KPI captures for trend history. One real `Forecast` type (Sales revenue — a deterministic linear-trend
+projection over trailing months, computed in TypeScript, not guessed by an LLM). One real `AIInsight`
+generator (an AI-written "business briefing" narrative over the current KPI snapshot, via a plain
+`chatComplete()` call). A 4th AI agent, **Analytics Assistant**, giving natural-language query support
+through the existing Agent SDK/orchestrator infrastructure with two new read-only tools. Real `Report`
+generation (PDF via the reused `PdfKitDocumentGenerator`, CSV via a small hand-rolled serializer) stored
+through Document Management, plus `ReportSchedule` with real recurring delivery (reusing
+`WorkflowTriggerScheduler`'s `node-cron` pattern) and a real email notification linking to the stored
+report.
+
+**Deferred, not silently dropped**:
+
+- **HR Analytics** and any **Knowledge-sourced** analytics — no data source exists (`modules/hr`,
+  `modules/knowledge` are confirmed-empty skeletons, no `.ts` files at all). Doc 20's own Dashboard Types
+  list doesn't even include a "Knowledge Analytics" section, only HR — a clean, doc-consistent deferral.
+- **Cash Position** and **Business Health Score** (Executive Dashboard) — no bank/cash-balance model exists
+  anywhere in Accounting yet, and "Business Health Score" has no defined weighting methodology from the
+  business; inventing a formula would be faking a number, not computing one.
+- **Balance Sheet, Aging Reports, Tax Summary** (Finance Analytics) — Accounting itself hasn't built these
+  (only `trialBalance`/`profitAndLoss` exist); Analytics reuses what Accounting has, it doesn't build
+  Accounting's missing reports for it.
+- **Warehouse Utilization, Slow Moving Stock, Batch Expiry** (Inventory Analytics) — no capacity field on
+  `Warehouse`, no movement-velocity computation, no batch/expiry field on `InventoryItem` today.
+- **Supplier Performance, Delivery Performance** (Procurement Analytics) — `PurchaseOrder`/`GoodsReceipt`
+  have no expected-vs-actual delivery date fields to score on-time-ness against.
+- **Shipment Performance** (Trading Analytics) — no Shipment model exists yet.
+- **Margin by Product** — deferred at the line-item level in one narrow case: `Quotation.marginPercent` is
+  denormalized from the quotation's _current_ `QuotationVersion`, so margin-by-product walks
+  `quotation.versions.find(v => v.versionNumber === quotation.currentVersionNumber)` for line items; margin
+  by _customer_ needs no such join and is fully real.
+- **Excel (XLSX) export** — no library anywhere in the repo; only PDF (`pdfkit`, already a real dependency
+  of `packages/workflow`) and CSV ship this pass. Adding `exceljs` is a follow-up, not pre-emptive.
+- **Configurable Dashboard/Widget layout** (drag-and-drop, user-arranged widgets) — no drag-and-drop
+  precedent exists anywhere in `apps/desktop` (Phase 7a already deferred this for its own Kanban board, same
+  reasoning applies here). Dashboards are fixed, real, computed sections — not a persisted `Dashboard`/
+  `Widget`/`KPI` catalog; KPI values are computed live by service methods, not read from a configurable
+  catalog table.
+- **Email attachments** — `EmailSenderPort`'s `EmailMessage` has no attachment field anywhere in this
+  codebase; extending that shared interface is out of scope for Analytics. Scheduled reports are delivered
+  as a real stored `Document` (real R2/MinIO) plus an email that links to it via `DocumentService`'s real
+  presigned-URL download, not a binary attachment.
+- **Market Forecast, Commodity Price Prediction** — doc 20 itself labels these "Future," not asking for them
+  now.
+- **Demand/Inventory/Cash Flow/Procurement Forecasts** — one real forecast type (Sales) ships as the
+  reference implementation of the pattern; the other four are the same shape, deferred to a later pass.
+
+### 2. Naming: `modules/reports`, not `modules/analytics`
+
+The workspace already had an empty `modules/reports` skeleton (`package.json` description: "Cross-module
+reporting and analytics module") from the initial monorepo scaffold — this is the module's real home, not a
+new `modules/analytics` folder; the package name stays `@modules/reports`. The **REST and desktop-UI
+surface is `/analytics`**, not `/reports` — doc 20's own REST API section literally specifies `GET
+/analytics/dashboard`, `GET /analytics/kpis`, etc., and `apps/desktop` already has a `/reports` route
+serving Accounting's own `ReportsPage` (trial balance/P&L); reusing that path would collide. Desktop nav
+label (once the UI pass lands): "Analytics".
+
+### 3. Schema
+
+New enums: `ForecastType` (`SALES` only this pass), `ReportType`
+(`EXECUTIVE`/`SALES`/`TRADING`/`FINANCE`/`INVENTORY`/`PROCUREMENT`/`AI_USAGE`), `ReportFormat`
+(`PDF`/`CSV`), `ReportScheduleFrequency` (`DAILY`/`WEEKLY`/`MONTHLY`), `AIInsightType`
+(`BUSINESS_BRIEFING` only this pass).
+
+Five real tenant-scoped aggregates (no pure-child tables this phase, unlike Tasks/Communication) — all
+added to `TENANT_SCOPED_MODELS`: `AnalyticsSnapshot` (`metrics: Json` — a flexible bag, not one rigid
+column per KPI, since the KPI set is expected to grow every future Analytics pass, same reasoning
+`AgentExecution`'s own `Json` fields use), `Forecast` (`horizonMonths`/`basisPeriods`/`projectedValue`),
+`AIInsight` (`title`/`body`), `Report` (`documentId?` — a **real** Prisma relation to the existing
+`Document` model, `onDelete: SetNull`, same "intra-engine reference" reasoning `Task.projectId` already
+established; `scheduleId?` likewise a real relation to `ReportSchedule`), `ReportSchedule`
+(`recipientEmails: String[]`, `isActive`, `lastRunAt?`).
+
+New `AuditEventType` members matching doc 20's list, minus the one that doesn't fit this app's existing
+audit philosophy (every other phase's `AuditLog` records state changes, not reads — "Dashboard Viewed" is
+deliberately skipped, same selective-mapping precedent Communication used): `REPORT_GENERATED`,
+`REPORT_EXPORTED`, `FORECAST_GENERATED`, `AI_INSIGHT_GENERATED`, `SCHEDULED_REPORT_SENT`.
+
+`packages/storage/src/domain/storage-key.ts`'s `STORAGE_MODULES` gains `'analytics'` — the same closed,
+extensible list every module that reuses Document Management registers into.
+
+### 4. Dashboards & KPIs — real Prisma aggregates, reusing existing services where they exist
+
+`AnalyticsKpiService` (`modules/reports/application/analytics-kpi.service.ts`) exposes one method per
+dashboard section. **Finance** surfaces Accounting's own `ReportsService.trialBalance`/`profitAndLoss`
+as-is, through a narrow `FinanceReportsPort` — the same narrow-port-at-composition-root pattern
+`modules/quotations` already established for `CustomerLookupPort`/`ProductLookupPort` (the port's return
+types are declared locally in `modules/reports`, structurally matching Accounting's real shapes, never
+imported from `modules/accounting` directly — "no module depends on another module's internals").
+**Executive** combines Invoice-based revenue, Accounting's `netIncome`, and outstanding receivables.
+**Sales** covers lead conversion (`Customer.status` groupBy), quote win rate, revenue by
+customer/country/product (`Order`/`OrderLineItem`; country needs a second fetch since Prisma can't `groupBy`
+across a relation in one query), and RFQ/Quotation pipeline counts. **Trading** covers RFQ/Quotation/Order
+status counts and margin by product/customer (`Quotation.marginPercent`, a real existing field). **Inventory**
+covers stock levels and inventory value (`quantityOnHand * Product.standardCost`, both real existing
+fields). **Procurement** covers purchase spend by supplier and month-to-date spend. **AI** covers request
+counts, cost (`AiUsageRecord`, extending `AiUsageRepository.sumCostSince`'s exact aggregate pattern),
+automation rate (`ToolExecution.approvalRequestId IS NULL` / total), human override rate
+(`ToolExecution.status === 'REJECTED'` / total-with-approval — `ToolExecutionStatus` already has a real
+`REJECTED` value, no `ApprovalRequest` join needed), and prompt success rate (`AgentExecution.status ===
+'COMPLETED'` / total).
+
+`buildSnapshotMetrics()` assembles a headline subset of the above into the `Json` bag `captureSnapshot()`
+writes to `AnalyticsSnapshot` — the basis both the Sales Forecast and any future trend chart read from, so
+trend data is real historical capture, not recomputed-and-hoped-consistent on every read.
+
+### 5. Forecast — real deterministic trend, not an AI guess
+
+`domain/sales-forecast.ts`'s `projectNextPeriod()`: ordinary-least-squares linear regression over trailing
+`TrendPoint`s (period index as x), clamped to zero (revenue can't legitimately project negative) — real
+math, unit tested directly against a known series (perfect uptrend, flat trend, a downtrend clamped to
+zero, and the `InsufficientForecastDataError` guard for fewer than 2 points). `AnalyticsForecastService`
+feeds it real trailing-month `Order` revenue via `getMonthlyRevenueHistory()` (a raw `$queryRaw` with
+`date_trunc('month', ...)`, manually scoped by `company_id` since raw SQL bypasses the tenant Prisma
+extension entirely — same pattern `packages/search`'s `PgVectorSearchProvider` already established for its
+own raw pgvector queries) and persists the result as a `Forecast` row. Keeping this deterministic (not
+LLM-based) matches the platform's consistent "AI narrates, doesn't invent numbers" stance already
+established (Phase 6 approvals stay human/rules-gated; Communication's channel gate is a real check, not an
+AI judgment call).
+
+### 6. AI Insight — one real "business briefing" generator
+
+`AnalyticsInsightService.generateBusinessBriefing()`: gathers the current KPI snapshot + latest Sales
+Forecast, builds a single `chatComplete()` call (no tools — `AiRouterService.chatComplete()`'s `tools`
+param is optional, so a tools-less plain completion is directly supported) asking for a short narrative
+summary, persists the result as an `AIInsight` row. The real substance behind doc 20's "AI Daily Briefing"
+and "business summaries" bullets; other named insight types (customer/supplier risk, pricing
+recommendations) are the same shape and explicitly deferred as a future `AIInsightType` addition — zero
+architecture change needed, same "pluggable later" framing every Phase 6/7 agent-adjacent feature has used.
+
+### 7. Analytics Assistant — the 4th AI agent, real natural-language querying
+
+`packages/ai/src/agent-sdk/domain/agents/analytics-agent.definition.ts`, following `KNOWLEDGE_AGENT`'s
+exact precedent: zero write-tools, `requiresHumanApproval: false` throughout. Two tools:
+`analytics.queryKpis` (section + optional filters, returns real numbers from `AnalyticsKpiService`) and
+`analytics.getForecast`. Added to the shared `AGENT_DEFINITIONS`/`TOOL_DEFINITIONS` arrays in
+`packages/ai/src/agent-sdk/domain/agents/index.ts` alongside the original 3 — the doc comment there now
+notes `ANALYTICS_AGENT` is the first of the "pluggable later" additions Phase 6 always intended. Bound in
+`apps/backend/src/modules/ai/ai.module.ts`'s existing `buildToolExecutor()` hand-written map, calling the
+new `AnalyticsKpiService`/`AnalyticsForecastService` directly (both injected into `AiModule` via a new
+`imports: [..., AnalyticsModule]`) — never a direct cross-module service import outside the composition
+root. The orchestrator's existing tool-calling loop (`AgentOrchestratorService`, unchanged) handles turning
+"why did profit decrease?" into a `analytics.queryKpis` call plus a synthesized text answer — no bespoke
+NL-to-SQL parser, reusing 100% of Phase 6's existing infrastructure. Doc 20's own `POST /analytics/query`
+REST endpoint was deliberately **not** built as a separate route: every other agent (Sales/Inventory/
+Knowledge) is invoked through the same generic `POST /ai/chat`/`POST /ai/execute` endpoints with a
+different `agentKey`, and giving Analytics its own dedicated query route would also have created a circular
+NestJS module dependency (`AiModule` needs `AnalyticsModule` for its tool bindings; a dedicated
+`/analytics/query` route would need `AiModule`'s `AiFacadeService` back). Natural-language analytics
+queries go through `POST /ai/chat` with `agentKey: 'analytics-agent'`, exactly like every other agent.
+
+**A real gap found while writing the e2e test, not part of the original plan**: the new agent's system
+prompt (`analytics-agent.system-prompt`, defined in `AGENT_SYSTEM_PROMPTS`) has no effect until it's
+actually persisted as a platform-default `PromptTemplate` row — `PromptTemplateService.resolve()` reads
+from the database, not from the code constant directly. `apps/backend/src/scripts/seed-ai-prompts.ts`
+(idempotent, merges `DEFAULT_PROMPT_TEMPLATES` + `AGENT_SYSTEM_PROMPTS`) needs a re-run whenever a new
+agent/prompt key is added — this was already true for the original 3 agents, just never exercised again
+until this phase added a 4th. Documented here since it's easy to forget: the orchestrator throws a real
+`PromptTemplateNotFoundError` at runtime, not a silent no-op, so this surfaces immediately in practice.
+
+### 8. Report generation and scheduled delivery — reusing Phase 2/3/6 infra, not rebuilding it
+
+`AnalyticsReportService.generateReport()` assembles the relevant KPI data into a `DocumentTemplate`
+(`{title, textBlocks, table}` — `packages/workflow`'s existing shape) and calls the reused
+`PdfKitDocumentGenerator` for PDF, or `domain/csv-serializer.ts` (real RFC-4180-style quote/comma/newline
+escaping, unit tested directly) for CSV. The generated buffer is stored via `DocumentService.upload()`
+(`module: 'analytics'`, `entityType: 'Report'`, `entityId: report.id`) — the exact generic-attachment
+pattern already established; a `Report` row records the linkage (created first, then patched with the real
+`documentId` once upload completes, since the upload itself needs the `Report`'s id as `entityId`).
+
+`ReportSchedule` delivery reuses `WorkflowTriggerScheduler`'s real `node-cron` pattern directly —
+`modules/reports/infrastructure/report-schedule.scheduler.ts`'s `registerReportScheduleRunner()` is a small
+dedicated poller (5-minute interval, same cadence `apps/backend/src/scheduler/scheduler.ts`'s own workflow
+polling uses), registered in `apps/backend/src/workers/worker.ts` alongside the existing subscribers — not
+a new standalone process, and not modeled as Workflow nodes (that would entangle Reports with the Workflow
+engine's own state machine for no real benefit). On each schedule's cron fire it calls `generateReport()`
+then sends a real email via `EmailSenderPort` directly — **not** `NotificationService`, which requires a
+real `recipientUserId` and is meant for in-app-notified users, not arbitrary schedule recipient addresses;
+same lesson Phase 7b's Communication module already learned about `NotificationService` swallowing errors
+and expecting the wrong kind of recipient identity. The email links to the report's real presigned download
+URL from `DocumentService.download()`, never a binary attachment (§1's scope decision).
+`runDueSchedules()` exposes a direct-invocation entrypoint for e2e tests, the same "invoke the handler
+function directly" pattern `tasks-event-consumption.e2e-spec.ts` uses rather than waiting on a real cron
+tick.
+
+### 9. RBAC and REST surface
+
+Single module string `'analytics'`; doc 20's Permissions list (View Analytics, Create Reports, Manage
+Dashboards, Export Reports, Schedule Reports, View AI Insights) collapses onto the existing
+`PermissionAction` enum with no new actions. Appended to `PHASE7_MODULES`
+(`['tasks', 'communication', 'analytics']`) in `packages/permissions/src/rbac/seed-data.ts`.
+
+```
+GET  /analytics/dashboard/:section   [analytics:view]   — section = executive|sales|trading|finance|inventory|procurement|ai
+GET  /analytics/kpis                 [analytics:view]   — flat KPI bag, same data buildSnapshotMetrics captures
+GET  /analytics/forecast/:type       [analytics:view]
+POST /analytics/forecast/:type       [analytics:create]  — trigger a fresh forecast generation
+GET  /analytics/insights             [analytics:view]
+POST /analytics/insights             [analytics:create]  — trigger a fresh AI briefing generation
+GET  /analytics/reports              [analytics:view]
+POST /analytics/reports              [analytics:create]  — generate a report now (type + format)
+GET/POST /analytics/schedules        [analytics:view / analytics:manage_settings]
+POST /analytics/schedules/:id/pause  [analytics:manage_settings]
+POST /analytics/schedules/:id/resume [analytics:manage_settings]
+```
+
+Natural-language querying goes through the existing `POST /ai/chat` (see §7) — not a `/analytics/query`
+route. `AnalyticsController`/`AnalyticsModule` follow the exact `useFactory` composition-root pattern
+`comms.module.ts` established: `AnalyticsKpiService`/`AnalyticsForecastService`/`AnalyticsInsightService`/
+`AnalyticsReportService` each constructed via `useFactory`, importing `AccountingModule` (for
+`ReportsService`, wrapped in `FinanceReportsPort`) and `DocumentsModule` (for `DocumentService`, wrapped in
+`ReportStoragePort`), with the same `ConsoleEmailSenderAdapter`/`SmtpEmailSenderAdapter` env-var-gated
+construction block every other module's real email path uses.
+
+### 10. Testing
+
+Unit: `domain/sales-forecast.spec.ts` (linear-trend math over a known series, the zero-clamp, the
+insufficient-data guard), `domain/csv-serializer.spec.ts` (comma/quote/newline escaping). E2e
+(`apps/backend/test/`, real Postgres/Redis/MinIO, plus live Ollama for the two AI-dependent specs):
+
+- `analytics-dashboard-kpis.e2e-spec.ts` — seeds real Customers/Products/Quotations/Orders/Invoices/
+  Suppliers/PurchaseOrders/Warehouse/InventoryItem, asserts every dashboard section's real computed numbers
+  against hand-computed expectations (8 assertions across Executive/Sales/Trading/Inventory/Procurement/
+  Finance/AI/snapshot).
+- `analytics-forecast-and-insight.e2e-spec.ts` — seeds three real trailing months of `Order` revenue on a
+  clean linear trend (1000/2000/3000), asserts the real forecast projects the trend's exact continuation
+  (4000); generates a real AI Business Briefing via live Ollama, asserts a persisted `AIInsight` with a
+  non-empty body and a real new `AiUsageRecord`.
+- `analytics-report-generation.e2e-spec.ts` — generates a real PDF and a real CSV report (full
+  `DocumentService` composition, same wiring as `document-lifecycle.e2e-spec.ts`), asserts real `Document`/
+  `DocumentVersion` rows with the right `entityType`/`entityId`/`contentType` and a non-trivial stored size.
+- `analytics-scheduled-report-delivery.e2e-spec.ts` — creates a real `ReportSchedule`, fires
+  `runDueSchedules()` directly, asserts a real `Report` + `Document` were created, `lastRunAt` was updated,
+  and a real email send was attempted (spy-wrapped `ConsoleEmailSenderAdapter`, same pattern
+  `comms-thread-lifecycle.e2e-spec.ts` uses) with the right recipient and a real download URL in the body.
+- `analytics-nl-query-agent.e2e-spec.ts` — a live-Ollama tool-calling test for the Analytics Assistant,
+  matching `ai-agents-tool-calling.e2e-spec.ts`'s exact shape: real orchestrator, real `analytics.queryKpis`
+  tool execution, a real `ToolExecution` row asserting `status: 'SUCCEEDED'`.
+
+### 11. Verification
+
+Full monorepo typecheck and `pnpm --filter backend build` clean on the first pass. All 5 new e2e specs pass
+(15/15 tests) against real Postgres/Redis/MinIO/Ollama. Full-suite regression run and desktop UI are the
+next steps — see the top-level checkpoint before starting the UI pass, same sequence every prior phase used.

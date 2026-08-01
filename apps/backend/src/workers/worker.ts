@@ -9,7 +9,7 @@ import {
   RuleEvaluationService,
   RuleRepository,
 } from '@platform/rules-engine';
-import { RealAiDecisionProvider } from '@platform/ai';
+import { RealAiDecisionProvider, RealOcrProvider } from '@platform/ai';
 import { buildAiRouter, buildPromptTemplateService } from '../common/ai/ai-factory';
 import {
   NodeExecutor,
@@ -26,12 +26,30 @@ import {
   NotificationService,
   SmtpEmailSenderAdapter,
   registerWorkflowApprovalRequestedSubscriber,
+  type EmailSenderPort,
 } from '@platform/notifications';
+import { getSharedStorage } from '@platform/storage';
+import {
+  SearchService,
+  DocumentFullTextSearchService,
+  PgVectorSearchProvider,
+} from '@platform/search';
+import { DocumentService, type DocumentAuditWriter } from '@modules/document-management';
 import {
   TaskService,
   registerTaskGenerationRequestedSubscriber,
   type TaskAuditWriter,
 } from '@modules/tasks';
+import {
+  AnalyticsKpiService,
+  AnalyticsReportService,
+  ReportRepository,
+  registerReportScheduleRunner,
+  type FinanceReportsPort,
+  type AnalyticsAuditWriter,
+  type ReportStoragePort,
+} from '@modules/reports';
+import { ReportsService } from '@modules/accounting';
 
 /**
  * Background worker process (docker/docker-compose.yml's `worker` service runs
@@ -127,6 +145,68 @@ async function main(): Promise<void> {
     taskService,
   );
 
+  // Real report generation/delivery — reuses the same rulesEvaluation/eventBus already built
+  // above for DocumentService's approval-evaluator dependency (matches documents.module.ts's
+  // own construction, duplicated here since worker.ts has no NestJS DI to pull it from).
+  const aiRouter = buildAiRouter(prisma);
+  const documentSearch = new SearchService(
+    new DocumentFullTextSearchService(prisma),
+    new PgVectorSearchProvider(prisma, aiRouter),
+  );
+  const ocrProvider = new RealOcrProvider(aiRouter, buildPromptTemplateService(prisma));
+  const documentAuditWriter: DocumentAuditWriter = taskAuditWriter;
+  const documentService = new DocumentService(
+    prisma,
+    getSharedStorage(),
+    documentSearch,
+    rulesEvaluation,
+    eventBus,
+    documentAuditWriter,
+    ocrProvider,
+  );
+
+  const accountingReports = new ReportsService(prisma);
+  const financeReports: FinanceReportsPort = {
+    trialBalance: (companyId) => accountingReports.trialBalance(companyId),
+    profitAndLoss: (companyId) => accountingReports.profitAndLoss(companyId),
+  };
+  const analyticsKpis = new AnalyticsKpiService(prisma, financeReports);
+  const analyticsStorage: ReportStoragePort = {
+    store: async (input) => {
+      const { document } = await documentService.upload({
+        companyId: input.companyId,
+        module: 'analytics',
+        entityType: 'Report',
+        entityId: input.entityId,
+        title: input.title,
+        ownerUserId: input.ownerUserId,
+        buffer: input.buffer,
+        contentType: input.contentType,
+        filename: input.filename,
+      });
+      return { documentId: document.id };
+    },
+    getDownloadUrl: async (documentId, actorUserId) => {
+      const { url } = await documentService.download(documentId, actorUserId);
+      return url;
+    },
+  };
+  const analyticsAuditWriter: AnalyticsAuditWriter = taskAuditWriter;
+  const emailSender: EmailSenderPort = emailAdapter;
+  const reportRepository = new ReportRepository(prisma);
+  const analyticsReportService = new AnalyticsReportService(
+    analyticsKpis,
+    new PdfKitDocumentGenerator(),
+    analyticsStorage,
+    emailSender,
+    analyticsAuditWriter,
+    reportRepository,
+  );
+  const unregisterReportScheduler = await registerReportScheduleRunner(
+    reportRepository,
+    analyticsReportService,
+  );
+
   const escalationChecker = new EscalationCheckerService(notificationService, prisma);
   const ESCALATION_INTERVAL_MS = Number(process.env.ESCALATION_CHECK_INTERVAL_MS ?? 60 * 60 * 1000);
   const escalationInterval = setInterval(() => {
@@ -136,13 +216,14 @@ async function main(): Promise<void> {
   }, ESCALATION_INTERVAL_MS);
 
   console.log(
-    'worker: started (BullMQ resume worker, approval-notify subscriber, task-generation subscriber, escalation checker)',
+    'worker: started (BullMQ resume worker, approval-notify subscriber, task-generation subscriber, report schedule runner, escalation checker)',
   );
 
   const shutdown = async () => {
     clearInterval(escalationInterval);
     await unsubscribeApprovalNotify();
     await unsubscribeTaskGeneration();
+    unregisterReportScheduler();
     await resumeWorker.close();
     await resumeQueue.close();
     process.exit(0);

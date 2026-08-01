@@ -31,6 +31,7 @@ import { QuotationService } from '@modules/quotations';
 import { InventoryService } from '@modules/inventory';
 import { SupplierService, RequisitionService, PurchaseOrderService } from '@modules/procurement';
 import { DocumentService } from '@modules/document-management';
+import { AnalyticsKpiService, AnalyticsForecastService } from '@modules/reports';
 import { AiController } from './ai.controller';
 import { CustomersModule } from '../customers/customers.module';
 import { ProductsModule } from '../products/products.module';
@@ -38,6 +39,7 @@ import { QuotationsModule } from '../quotations/quotations.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { ProcurementModule } from '../procurement/procurement.module';
 import { DocumentsModule } from '../documents/documents.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { buildAiRouter, buildPromptTemplateService } from '../../common/ai/ai-factory';
 
@@ -58,6 +60,8 @@ function buildToolExecutor(deps: {
   requisitions: RequisitionService;
   purchaseOrders: PurchaseOrderService;
   documents: DocumentService;
+  analyticsKpis: AnalyticsKpiService;
+  analyticsForecasts: AnalyticsForecastService;
 }): ToolExecutor {
   const handlers: Record<
     string,
@@ -144,6 +148,29 @@ function buildToolExecutor(deps: {
         'semantic',
       ),
     'knowledge.getDocument': (input) => deps.documents.getById(input.documentId as string),
+
+    'analytics.queryKpis': (input, ctx) => {
+      switch (input.section as string) {
+        case 'executive':
+          return deps.analyticsKpis.getExecutiveKpis(ctx.companyId);
+        case 'sales':
+          return deps.analyticsKpis.getSalesKpis(ctx.companyId);
+        case 'trading':
+          return deps.analyticsKpis.getTradingKpis(ctx.companyId);
+        case 'finance':
+          return deps.analyticsKpis.getFinanceKpis(ctx.companyId);
+        case 'inventory':
+          return deps.analyticsKpis.getInventoryKpis(ctx.companyId);
+        case 'procurement':
+          return deps.analyticsKpis.getProcurementKpis(ctx.companyId);
+        case 'ai':
+          return deps.analyticsKpis.getAiKpis(ctx.companyId);
+        default:
+          throw new Error(`Unknown analytics section "${String(input.section)}".`);
+      }
+    },
+    'analytics.getForecast': (_input, ctx) =>
+      deps.analyticsForecasts.getLatestSalesForecast(ctx.companyId),
   };
 
   return {
@@ -163,6 +190,7 @@ function buildToolExecutor(deps: {
     InventoryModule,
     ProcurementModule,
     DocumentsModule,
+    AnalyticsModule,
   ],
   controllers: [AiController],
   providers: [
@@ -178,6 +206,8 @@ function buildToolExecutor(deps: {
         requisitions: RequisitionService,
         purchaseOrders: PurchaseOrderService,
         documents: DocumentService,
+        analyticsKpis: AnalyticsKpiService,
+        analyticsForecasts: AnalyticsForecastService,
       ) => {
         const db = prisma.client;
         const aiRouter = buildAiRouter(db);
@@ -221,6 +251,8 @@ function buildToolExecutor(deps: {
           requisitions,
           purchaseOrders,
           documents,
+          analyticsKpis,
+          analyticsForecasts,
         });
 
         const orchestrator = new AgentOrchestratorService({
@@ -255,6 +287,8 @@ function buildToolExecutor(deps: {
         RequisitionService,
         PurchaseOrderService,
         DocumentService,
+        AnalyticsKpiService,
+        AnalyticsForecastService,
       ],
     },
   ],

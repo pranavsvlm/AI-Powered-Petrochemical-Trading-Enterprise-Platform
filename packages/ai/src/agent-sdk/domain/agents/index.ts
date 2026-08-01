@@ -2,23 +2,32 @@ import type { AgentDefinition, ToolDefinition } from '../agent-types';
 import { SALES_AGENT, SALES_AGENT_TOOLS } from './sales-agent.definition';
 import { INVENTORY_AGENT, INVENTORY_AGENT_TOOLS } from './inventory-agent.definition';
 import { KNOWLEDGE_AGENT, KNOWLEDGE_AGENT_TOOLS } from './knowledge-agent.definition';
+import { ANALYTICS_AGENT, ANALYTICS_AGENT_TOOLS } from './analytics-agent.definition';
 
 export * from './sales-agent.definition';
 export * from './inventory-agent.definition';
 export * from './knowledge-agent.definition';
+export * from './analytics-agent.definition';
 
 /**
- * The 3 representative agents this phase ships — see docs/DOMAIN_MODEL_PHASE6.md §12 for why
- * these 3 (not all 11-15 doc 26 names) were chosen, and for the note that every other
+ * The representative agents this phase ships — see docs/DOMAIN_MODEL_PHASE6.md §12 for why the
+ * original 3 (not all 11-15 doc 26 names) were chosen, and for the note that every other
  * doc-26-named agent is pluggable into this same AgentDefinition/ToolDefinition shape later
- * with zero architecture changes.
+ * with zero architecture changes. `ANALYTICS_AGENT` (Phase 7c, doc 20) is the first of those
+ * pluggable additions, added the same way.
  */
-export const AGENT_DEFINITIONS: AgentDefinition[] = [SALES_AGENT, INVENTORY_AGENT, KNOWLEDGE_AGENT];
+export const AGENT_DEFINITIONS: AgentDefinition[] = [
+  SALES_AGENT,
+  INVENTORY_AGENT,
+  KNOWLEDGE_AGENT,
+  ANALYTICS_AGENT,
+];
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ...SALES_AGENT_TOOLS,
   ...INVENTORY_AGENT_TOOLS,
   ...KNOWLEDGE_AGENT_TOOLS,
+  ...ANALYTICS_AGENT_TOOLS,
 ];
 
 /**
@@ -44,4 +53,9 @@ Be concise and factual. If you don't have enough information to answer, say so a
 Use the search tool to find relevant documents, then answer strictly from what you find — never invent facts not present in the retrieved documents.
 If the search results don't contain enough information to answer confidently, say so plainly rather than guessing.
 Be concise and cite which document(s) you used when relevant.`,
+
+  'analytics-agent.system-prompt': `You are an Analytics Assistant for a petrochemical trading company, answering questions about business KPIs, dashboards, and forecasts.
+Use the query tools to fetch real computed figures — never invent a number that didn't come from a tool result.
+Pick the dashboard section (executive, sales, trading, finance, inventory, procurement, or ai) that best matches the question; call getForecast for revenue-projection questions.
+Be concise and factual. If the available data doesn't answer the question, say so plainly rather than guessing.`,
 };

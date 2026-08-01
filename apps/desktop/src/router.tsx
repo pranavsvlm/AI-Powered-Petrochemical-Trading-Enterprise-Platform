@@ -44,6 +44,7 @@ import {
   ProjectCreatePage,
 } from '@modules/tasks/ui';
 import { ThreadListPage, ThreadDetailPage, ThreadCreatePage } from '@modules/communication/ui';
+import { AnalyticsDashboardPage, AnalyticsReportsPage } from '@modules/reports/ui';
 import { Layout } from './Layout';
 import { LoginPage } from './pages/LoginPage';
 import { RequireAuth } from './RequireAuth';
@@ -104,6 +105,8 @@ export const router: ReturnType<typeof createHashRouter> = createHashRouter([
       { path: 'comms', element: <ThreadListPage /> },
       { path: 'comms/new', element: <ThreadCreatePage /> },
       { path: 'comms/:id', element: <ThreadDetailPage /> },
+      { path: 'analytics', element: <AnalyticsDashboardPage /> },
+      { path: 'analytics/reports', element: <AnalyticsReportsPage /> },
     ],
   },
 ]);
