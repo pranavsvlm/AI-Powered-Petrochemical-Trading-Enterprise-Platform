@@ -1,0 +1,33 @@
+{
+  "name": "@modules/communication",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Communication Management module (doc 19).",
+  "main": "api/index.ts",
+  "types": "api/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint domain application infrastructure api hooks ui --max-warnings=0",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.4.4",
+    "@platform/core": "workspace:*",
+    "@platform/types": "workspace:*",
+    "@platform/database": "workspace:*",
+    "@platform/event-bus": "workspace:*",
+    "@platform/notifications": "workspace:*",
+    "@platform/ui": "workspace:*",
+    "react": "^18.3.1",
+    "react-router-dom": "^6.27.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.13",
+    "@types/node": "^20.16.11",
+    "@types/react": "^18.3.11",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.6.3"
+  }
+}

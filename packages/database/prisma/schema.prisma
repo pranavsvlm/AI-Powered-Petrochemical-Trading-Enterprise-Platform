@@ -1321,6 +1321,7 @@ enum ActivityType {
   EMAIL
   MEETING
   TASK
+  MESSAGE
 }
 
 model Customer {
@@ -2812,4 +2813,80 @@ model TimeEntry {
   @@index([taskId])
   @@index([projectId])
   @@map("time_entries")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Communication Management (doc 19) — Phase 7b. Models are `Comms*`-prefixed
+// deliberately — `Conversation`/`ConversationMessage` already exist (Phase 6's AI-agent
+// chat-transcript storage, a different concern) and this avoids any ambiguity with them.
+
+enum CommsThreadType {
+  CUSTOMER
+  SUPPLIER
+  INTERNAL
+  ANNOUNCEMENT
+}
+
+enum CommsThreadStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum CommsMessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+// companyId is a plain scalar column, not a Prisma relation — same precedent as
+// Event.companyId/Task.companyId (see the comment on `model Company`). subjectType/subjectId
+// are free-form, no FK/lookup validation — mirrors Conversation's own existing precedent
+// exactly (see docs/DOMAIN_MODEL_PHASE7.md, Communication section).
+model CommsThread {
+  id              String            @id @default(uuid())
+  companyId       String            @map("company_id")
+  type            CommsThreadType
+  status          CommsThreadStatus @default(ACTIVE)
+  subjectType     String?           @map("subject_type")
+  subjectId       String?           @map("subject_id")
+  title           String?
+  createdByUserId String?           @map("created_by_user_id")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  participants CommsParticipant[]
+  messages     CommsMessage[]
+
+  @@index([companyId])
+  @@index([companyId, subjectType, subjectId])
+  @@map("comms_threads")
+}
+
+model CommsParticipant {
+  id                 String   @id @default(uuid())
+  threadId           String   @map("thread_id")
+  userId             String?  @map("user_id")
+  externalName       String?  @map("external_name")
+  externalIdentifier String?  @map("external_identifier")
+  addedAt            DateTime @default(now()) @map("added_at")
+
+  thread CommsThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId])
+  @@map("comms_participants")
+}
+
+model CommsMessage {
+  id                 String                @id @default(uuid())
+  threadId           String                @map("thread_id")
+  senderUserId       String?               @map("sender_user_id")
+  senderExternalName String?               @map("sender_external_name")
+  direction          CommsMessageDirection
+  channel            NotificationChannel
+  content            String
+  createdAt          DateTime              @default(now()) @map("created_at")
+
+  thread CommsThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId])
+  @@map("comms_messages")
 }

@@ -43,6 +43,7 @@ import {
   ProjectDetailPage,
   ProjectCreatePage,
 } from '@modules/tasks/ui';
+import { ThreadListPage, ThreadDetailPage, ThreadCreatePage } from '@modules/communication/ui';
 import { Layout } from './Layout';
 import { LoginPage } from './pages/LoginPage';
 import { RequireAuth } from './RequireAuth';
@@ -100,6 +101,9 @@ export const router: ReturnType<typeof createHashRouter> = createHashRouter([
       { path: 'projects', element: <ProjectListPage /> },
       { path: 'projects/new', element: <ProjectCreatePage /> },
       { path: 'projects/:id', element: <ProjectDetailPage /> },
+      { path: 'comms', element: <ThreadListPage /> },
+      { path: 'comms/new', element: <ThreadCreatePage /> },
+      { path: 'comms/:id', element: <ThreadDetailPage /> },
     ],
   },
 ]);

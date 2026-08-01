@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { Prisma } from '@platform/database';
+import { ChannelNotAvailableError } from '@platform/notifications';
 
 interface ErrorResponseBody {
   statusCode: number;
@@ -54,6 +55,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         error = 'Bad Request';
         message = 'The request could not be processed.';
       }
+    } else if (exception instanceof ChannelNotAvailableError) {
+      status = HttpStatus.BAD_REQUEST;
+      error = 'Bad Request';
+      message = exception.message;
     } else if (exception instanceof Error) {
       this.logger.error(exception.message, exception.stack);
     }

@@ -47,6 +47,9 @@ importers:
       '@modules/ai':
         specifier: workspace:*
         version: link:../../modules/ai
+      '@modules/communication':
+        specifier: workspace:*
+        version: link:../../modules/communication
       '@modules/company':
         specifier: workspace:*
         version: link:../../modules/company
@@ -189,6 +192,9 @@ importers:
       '@modules/ai':
         specifier: workspace:*
         version: link:../../modules/ai
+      '@modules/communication':
+        specifier: workspace:*
+        version: link:../../modules/communication
       '@modules/customers':
         specifier: workspace:*
         version: link:../../modules/customers
@@ -342,6 +348,55 @@ importers:
       '@platform/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@platform/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      '@platform/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-router-dom:
+        specifier: ^6.27.0
+        version: 6.30.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+    devDependencies:
+      '@types/jest':
+        specifier: ^29.5.13
+        version: 29.5.14
+      '@types/node':
+        specifier: ^20.16.11
+        version: 20.19.43
+      '@types/react':
+        specifier: ^18.3.11
+        version: 18.3.31
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
+      ts-jest:
+        specifier: ^29.2.5
+        version: 29.4.11(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
+  modules/communication:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^10.4.4
+        version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@platform/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@platform/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@platform/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
+      '@platform/notifications':
+        specifier: workspace:*
+        version: link:../../packages/notifications
       '@platform/types':
         specifier: workspace:*
         version: link:../../packages/types
