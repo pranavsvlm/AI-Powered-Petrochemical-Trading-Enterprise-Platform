@@ -79,6 +79,19 @@ export enum AuditEventType {
   INVOICE_GENERATED = 'INVOICE_GENERATED',
   PAYMENT_RECORDED = 'PAYMENT_RECORDED',
   SUPPLIER_BILL_CREATED = 'SUPPLIER_BILL_CREATED',
+
+  // Task & Project Management (doc 25) — Phase 7a. No dedicated TaskActivity table — these
+  // reuse the shared AuditLog, same precedent every business-module phase since Phase 4 has
+  // followed. See docs/DOMAIN_MODEL_PHASE7.md.
+  TASK_CREATED = 'TASK_CREATED',
+  TASK_UPDATED = 'TASK_UPDATED',
+  TASK_ASSIGNED = 'TASK_ASSIGNED',
+  TASK_STATUS_CHANGED = 'TASK_STATUS_CHANGED',
+  TASK_COMPLETED = 'TASK_COMPLETED',
+  TASK_REASSIGNED = 'TASK_REASSIGNED',
+  AI_TASK_GENERATED = 'AI_TASK_GENERATED',
+  PROJECT_CREATED = 'PROJECT_CREATED',
+  TIME_LOGGED = 'TIME_LOGGED',
 }
 
 export interface AuditEntry {

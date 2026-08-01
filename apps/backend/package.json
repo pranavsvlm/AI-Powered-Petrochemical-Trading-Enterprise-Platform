@@ -39,6 +39,7 @@
     "@modules/procurement": "workspace:*",
     "@modules/accounting": "workspace:*",
     "@modules/ai": "workspace:*",
+    "@modules/tasks": "workspace:*",
     "class-validator": "^0.14.1",
     "class-transformer": "^0.5.1",
     "jsonwebtoken": "^9.0.2",

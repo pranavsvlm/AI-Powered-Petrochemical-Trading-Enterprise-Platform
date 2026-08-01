@@ -3,6 +3,7 @@ export const PACKAGE_NAME = '@platform/event-bus';
 export type { EventEnvelope, PublishOptions } from './domain/event-envelope';
 export { EVENT_TYPES } from './domain/event-catalog';
 export type { EventTypeName } from './domain/event-catalog';
+export type { TaskGenerationRequestedPayload } from './domain/event-payloads';
 export { EventBusError, TenantMismatchError, EventNotFoundError } from './domain/errors';
 export { computeBackoffMs, hasExceededMaxRetries } from './domain/backoff';
 

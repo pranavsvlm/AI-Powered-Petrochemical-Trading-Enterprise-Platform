@@ -752,6 +752,7 @@ model RuleExecution {
   rule Rule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
   documentApprovals DocumentApproval[]
   approvalRequests  ApprovalRequest[]
+  tasks             Task[]
 
   @@index([companyId])
   @@index([ruleId])
@@ -2642,4 +2643,173 @@ model Memory {
   @@unique([companyId, scopeType, scopeId, key])
   @@index([companyId, scopeType, scopeId])
   @@map("memories")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Task & Project Management (doc 25) — Phase 7a.
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  BACKLOG
+  PLANNED
+  IN_PROGRESS
+  REVIEW
+  COMPLETED
+  ARCHIVED
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+}
+
+enum MilestoneStatus {
+  PENDING
+  COMPLETED
+}
+
+// companyId/assigneeUserId/assigneeTeamId/createdByUserId are plain scalar columns, not
+// Prisma relations — matching the precedent Event.companyId and WorkflowTask.assigneeUserId/
+// assigneeTeamId already set (see the comment on `model Company` for why: tenant isolation is
+// enforced by the tenant-extension + TenantContextStore, not a DB FK, and Company's own
+// relation list is already large). sourceModule/sourceEntityType/sourceEntityId are the
+// literal "linked by event reference, not foreign key" mechanism the roadmap's Phase 7
+// acceptance criteria call for — see docs/DOMAIN_MODEL_PHASE7.md.
+model Task {
+  id               String       @id @default(uuid())
+  companyId        String       @map("company_id")
+  title            String
+  description      String?
+  priority         TaskPriority @default(MEDIUM)
+  status           TaskStatus   @default(BACKLOG)
+  dueDate          DateTime?    @map("due_date")
+  startDate        DateTime?    @map("start_date")
+  assigneeUserId   String?      @map("assignee_user_id")
+  assigneeTeamId   String?      @map("assignee_team_id")
+  projectId        String?      @map("project_id")
+  createdByUserId  String?      @map("created_by_user_id")
+  sourceModule     String?      @map("source_module")
+  sourceEntityType String?      @map("source_entity_type")
+  sourceEntityId   String?      @map("source_entity_id")
+  ruleExecutionId  String?      @map("rule_execution_id")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  project       Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  ruleExecution RuleExecution? @relation(fields: [ruleExecutionId], references: [id], onDelete: SetNull)
+  comments      TaskComment[]
+  checklist     TaskChecklist[]
+  timeEntries   TimeEntry[]
+
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([projectId])
+  @@index([assigneeUserId])
+  @@map("tasks")
+}
+
+model TaskComment {
+  id           String   @id @default(uuid())
+  taskId       String   @map("task_id")
+  authorUserId String   @map("author_user_id")
+  content      String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_comments")
+}
+
+model TaskChecklist {
+  id        String   @id @default(uuid())
+  taskId    String   @map("task_id")
+  label     String
+  isDone    Boolean  @default(false) @map("is_done")
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_checklist_items")
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  companyId   String        @map("company_id")
+  name        String
+  description String?
+  status      ProjectStatus @default(ACTIVE)
+  ownerUserId String?       @map("owner_user_id")
+  startDate   DateTime?     @map("start_date")
+  endDate     DateTime?     @map("end_date")
+  budget      Decimal?      @db.Decimal(18, 2)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  tasks       Task[]
+  members     ProjectMember[]
+  milestones  ProjectMilestone[]
+  timeEntries TimeEntry[]
+
+  @@index([companyId])
+  @@map("projects")
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String   @map("project_id")
+  userId    String   @map("user_id")
+  addedAt   DateTime @default(now()) @map("added_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@map("project_members")
+}
+
+model ProjectMilestone {
+  id          String          @id @default(uuid())
+  projectId   String          @map("project_id")
+  title       String
+  dueDate     DateTime?       @map("due_date")
+  status      MilestoneStatus @default(PENDING)
+  completedAt DateTime?       @map("completed_at")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("project_milestones")
+}
+
+model TimeEntry {
+  id              String    @id @default(uuid())
+  companyId       String    @map("company_id")
+  userId          String    @map("user_id")
+  taskId          String?   @map("task_id")
+  projectId       String?   @map("project_id")
+  startedAt       DateTime  @map("started_at")
+  endedAt         DateTime? @map("ended_at")
+  durationMinutes Int?      @map("duration_minutes")
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  task    Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([userId])
+  @@index([taskId])
+  @@index([projectId])
+  @@map("time_entries")
 }

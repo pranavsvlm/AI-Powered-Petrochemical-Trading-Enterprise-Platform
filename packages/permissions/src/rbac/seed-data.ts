@@ -78,6 +78,18 @@ const PHASE5_MODULES = ['inventory', 'procurement', 'accounting'];
  */
 const PHASE6_MODULES = ['ai'];
 
+/**
+ * Phase 7's own sub-modules are being built one at a time (HR, Communication, Analytics,
+ * Tasks — docs 15/19/20/25), not all at once — see docs/DOMAIN_MODEL_PHASE7.md. This array
+ * grows as each sub-module lands rather than each minting its own `PHASE7x_MODULES` array.
+ * Tasks (doc 25) is first: `tasks.controller.ts`/`projects.controller.ts`/
+ * `time-entries.controller.ts` all gate on the single `'tasks'` module — doc 25 frames "Task &
+ * Project Management" as one module, and its own Permissions list ("Manage Projects", "Track
+ * Time", etc.) collapses onto the existing PermissionAction enum with no new actions needed,
+ * same as every prior phase.
+ */
+const PHASE7_MODULES = ['tasks'];
+
 export const SEED_PERMISSIONS = [
   ...PHASE1_MODULES,
   ...PHASE2_MODULES,
@@ -85,6 +97,7 @@ export const SEED_PERMISSIONS = [
   ...PHASE4_MODULES,
   ...PHASE5_MODULES,
   ...PHASE6_MODULES,
+  ...PHASE7_MODULES,
 ].flatMap((module) =>
   Object.values(PermissionAction).map((action) => ({
     code: `${module}:${action.toLowerCase()}`,

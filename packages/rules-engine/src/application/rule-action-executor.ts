@@ -1,4 +1,4 @@
-import type { RedisStreamsEventBus } from '@platform/event-bus';
+import type { RedisStreamsEventBus, TaskGenerationRequestedPayload } from '@platform/event-bus';
 import { EVENT_TYPES } from '@platform/event-bus';
 import type { AiDecisionProvider } from '../domain/ports/ai-decision-provider.port';
 import type {
@@ -21,7 +21,9 @@ export interface RuleActionExecutorDeps {
 
 /**
  * Executes a single resolved RuleAction. Each action type is a real, typed handler.
- * GENERATE_TASK publishes an event rather than writing to a (nonexistent) Task table.
+ * GENERATE_TASK publishes an event rather than writing directly to `modules/tasks`' Task table
+ * — `packages/*` must never depend on `modules/*` (see docs/DOMAIN_MODEL_PHASE6.md §9); Phase
+ * 7a's `modules/tasks` is the real consumer, see docs/DOMAIN_MODEL_PHASE7.md §3.
  * EXECUTE_WORKFLOW and NOTIFY call the injected public-API ports of the workflow/notification
  * packages, never their internals. CALL_AI always throws via the documented seam.
  */
@@ -66,20 +68,21 @@ export class RuleActionExecutor {
 
       case 'GENERATE_TASK': {
         if (isSimulation) return { simulated: true, event: EVENT_TYPES.TASK_GENERATION_REQUESTED };
+        const payload: TaskGenerationRequestedPayload = {
+          ruleId,
+          companyId: context.companyId,
+          assigneeUserId: action.params.assigneeUserId as string | undefined,
+          assigneeTeamId: action.params.assigneeTeamId as string | undefined,
+          title: action.params.title as string,
+          description: action.params.description as string | undefined,
+          dueDate: action.params.dueDate as string | undefined,
+          sourceModule: context.module,
+          sourceEntityId: action.params.sourceEntityId as string | undefined,
+        };
         const envelope = await this.deps.eventBus.publish(
           EVENT_TYPES.TASK_GENERATION_REQUESTED,
           context.companyId,
-          {
-            ruleId,
-            companyId: context.companyId,
-            assigneeUserId: action.params.assigneeUserId,
-            assigneeTeamId: action.params.assigneeTeamId,
-            title: action.params.title,
-            description: action.params.description,
-            dueDate: action.params.dueDate,
-            sourceModule: context.module,
-            sourceEntityId: action.params.sourceEntityId,
-          },
+          payload,
           '@platform/rules-engine',
         );
         return { eventId: envelope.eventId };

@@ -20,6 +20,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { AccountingModule } from './modules/accounting/accounting.module';
 import { AiModule } from './modules/ai/ai.module';
+import { TasksModule } from './modules/tasks/tasks.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { AiModule } from './modules/ai/ai.module';
     ProcurementModule,
     AccountingModule,
     AiModule,
+    TasksModule,
   ],
   controllers: [AppController],
   providers: [AppService],

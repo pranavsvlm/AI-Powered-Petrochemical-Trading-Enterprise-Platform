@@ -27,6 +27,11 @@ import {
   SmtpEmailSenderAdapter,
   registerWorkflowApprovalRequestedSubscriber,
 } from '@platform/notifications';
+import {
+  TaskService,
+  registerTaskGenerationRequestedSubscriber,
+  type TaskAuditWriter,
+} from '@modules/tasks';
 
 /**
  * Background worker process (docker/docker-compose.yml's `worker` service runs
@@ -97,6 +102,31 @@ async function main(): Promise<void> {
     notificationService,
   );
 
+  // Mirrors AuditService.record()'s insert shape directly — worker.ts is a plain script, not a
+  // NestJS DI context, so AuditService (which depends on the NestJS-only PrismaService wrapper)
+  // isn't constructable here.
+  const taskAuditWriter: TaskAuditWriter = {
+    record: async (entry) => {
+      await prisma.auditLog.create({
+        data: {
+          companyId: entry.companyId,
+          actorUserId: entry.actorUserId,
+          eventType: entry.eventType,
+          entityType: entry.entityType,
+          entityId: entry.entityId,
+          before: entry.before === undefined ? undefined : (entry.before as object),
+          after: entry.after === undefined ? undefined : (entry.after as object),
+          ipAddress: entry.ipAddress ?? null,
+        },
+      });
+    },
+  };
+  const taskService = new TaskService(prisma, taskAuditWriter);
+  const unsubscribeTaskGeneration = await registerTaskGenerationRequestedSubscriber(
+    eventBus,
+    taskService,
+  );
+
   const escalationChecker = new EscalationCheckerService(notificationService, prisma);
   const ESCALATION_INTERVAL_MS = Number(process.env.ESCALATION_CHECK_INTERVAL_MS ?? 60 * 60 * 1000);
   const escalationInterval = setInterval(() => {
@@ -106,12 +136,13 @@ async function main(): Promise<void> {
   }, ESCALATION_INTERVAL_MS);
 
   console.log(
-    'worker: started (BullMQ resume worker, approval-notify subscriber, escalation checker)',
+    'worker: started (BullMQ resume worker, approval-notify subscriber, task-generation subscriber, escalation checker)',
   );
 
   const shutdown = async () => {
     clearInterval(escalationInterval);
     await unsubscribeApprovalNotify();
+    await unsubscribeTaskGeneration();
     await resumeWorker.close();
     await resumeQueue.close();
     process.exit(0);
