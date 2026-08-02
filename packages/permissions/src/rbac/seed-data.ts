@@ -90,6 +90,19 @@ const PHASE6_MODULES = ['ai'];
  */
 const PHASE7_MODULES = ['tasks', 'communication', 'analytics', 'hr'];
 
+/**
+ * Phase 8's own sub-areas (API & Integration Platform / Plugin SDK, docs 27/29) are being built
+ * one batch at a time — see docs/DOMAIN_MODEL_PHASE8.md. This array grows as each batch lands,
+ * same convention `PHASE7_MODULES` established. Batch A (API Keys) is first: `api-keys.controller.ts`
+ * gates on the single `'api-keys'` module — doc 27's "Manage API Keys" permission collapses onto
+ * the existing PermissionAction enum with no new actions needed, same as every prior phase. Doc
+ * 30's two Developer endpoints don't get a module here — neither is permission-gated (health is
+ * public, version is auth-only) so there's nothing to seed a permission for. Batch B adds
+ * 'webhooks' and 'plugins' — doc 27's "Manage Webhooks" and doc 29's "Manage Plugins"/"Install
+ * Plugins"/"View Plugin Logs" all collapse onto the existing PermissionAction enum the same way.
+ */
+const PHASE8_MODULES = ['api-keys', 'webhooks', 'plugins'];
+
 export const SEED_PERMISSIONS = [
   ...PHASE1_MODULES,
   ...PHASE2_MODULES,
@@ -98,6 +111,7 @@ export const SEED_PERMISSIONS = [
   ...PHASE5_MODULES,
   ...PHASE6_MODULES,
   ...PHASE7_MODULES,
+  ...PHASE8_MODULES,
 ].flatMap((module) =>
   Object.values(PermissionAction).map((action) => ({
     code: `${module}:${action.toLowerCase()}`,

@@ -50,6 +50,7 @@ import {
   type ReportStoragePort,
 } from '@modules/reports';
 import { ReportsService } from '@modules/accounting';
+import { registerWebhookDispatchSubscriber } from '@modules/extensibility';
 
 /**
  * Background worker process (docker/docker-compose.yml's `worker` service runs
@@ -207,6 +208,8 @@ async function main(): Promise<void> {
     analyticsReportService,
   );
 
+  const unsubscribeWebhookDispatch = await registerWebhookDispatchSubscriber(eventBus, prisma);
+
   const escalationChecker = new EscalationCheckerService(notificationService, prisma);
   const ESCALATION_INTERVAL_MS = Number(process.env.ESCALATION_CHECK_INTERVAL_MS ?? 60 * 60 * 1000);
   const escalationInterval = setInterval(() => {
@@ -216,13 +219,14 @@ async function main(): Promise<void> {
   }, ESCALATION_INTERVAL_MS);
 
   console.log(
-    'worker: started (BullMQ resume worker, approval-notify subscriber, task-generation subscriber, report schedule runner, escalation checker)',
+    'worker: started (BullMQ resume worker, approval-notify subscriber, task-generation subscriber, report schedule runner, webhook dispatch subscriber, escalation checker)',
   );
 
   const shutdown = async () => {
     clearInterval(escalationInterval);
     await unsubscribeApprovalNotify();
     await unsubscribeTaskGeneration();
+    await unsubscribeWebhookDispatch();
     unregisterReportScheduler();
     await resumeWorker.close();
     await resumeQueue.close();

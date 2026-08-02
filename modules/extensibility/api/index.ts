@@ -1,0 +1,15 @@
+export { ApiKeyService } from '../application/api-key.service';
+export type { CreatedApiKey } from '../application/api-key.service';
+export { PluginService } from '../application/plugin.service';
+export type { PluginListItem } from '../application/plugin.service';
+export { WebhookService, WEBHOOK_SUPPORTED_EVENT_TYPES } from '../application/webhook.service';
+export type { ExtensibilityAuditWriter } from '../application/ports';
+export { ApiKeyRepository } from '../infrastructure/api-key.repository';
+export type { CreateApiKeyInput } from '../infrastructure/api-key.repository';
+export { PluginRepository } from '../infrastructure/plugin.repository';
+export { WebhookRepository, WebhookDeliveryRepository } from '../infrastructure/webhook.repository';
+export { WebhookDispatcher } from '../infrastructure/webhook-dispatcher';
+export { PLUGIN_DEFINITIONS } from '../domain/plugin-catalog';
+export type { PluginDefinition, PluginCategory } from '../domain/plugin-catalog';
+export { signWebhookPayload } from '../domain/webhook-signing';
+export { registerWebhookDispatchSubscriber } from '../infrastructure/webhook-dispatch.subscriber';

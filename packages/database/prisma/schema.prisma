@@ -95,6 +95,9 @@ model Company {
   // large fan-out — see docs/DOMAIN_MODEL_PHASE2.md for the tenant-isolation
   // approach used instead (service-level scoping + tenant-extension).
   Employee             Employee[]
+  apiKeys              ApiKey[]
+  webhooks             Webhook[]
+  pluginInstalls       PluginInstall[]
 
   @@map("companies")
 }
@@ -225,6 +228,7 @@ model User {
   documentPermissions         DocumentPermission[]
   documentApprovalsAsApprover DocumentApproval[]
   employee                    Employee?
+  apiKeys                     ApiKey[]
 
   @@unique([companyId, email])
   @@index([companyId])
@@ -3209,4 +3213,91 @@ model EmployeeAsset {
 
   @@index([companyId, employeeId])
   @@map("employee_assets")
+}
+
+// Phase 8 (doc 27) — a key authenticates AS the owning user and inherits that user's real RBAC
+// permissions; no separate scopes system. keyHash is a one-way hash of the raw secret (never
+// stored); keyPrefix is a short, non-secret identifier shown in the desktop UI list so a user can
+// tell keys apart without ever re-displaying the secret. revokedAt is the soft-delete convention
+// this platform uses everywhere — DELETE /api-keys/:id sets it, never a real row delete.
+model ApiKey {
+  id         String    @id @default(uuid())
+  companyId  String    @map("company_id")
+  userId     String    @map("user_id")
+  name       String
+  keyPrefix  String    @map("key_prefix")
+  keyHash    String    @unique @map("key_hash")
+  lastUsedAt DateTime? @map("last_used_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([userId])
+  @@map("api_keys")
+}
+
+// Phase 8b (docs 27/29) — Webhooks are gated behind the Plugin lifecycle itself: a company must
+// install+activate the 'webhooks' PluginInstall row before WebhookService.create() will accept a
+// new subscription (checked again per-delivery, so deactivation pauses dispatch of existing
+// webhooks too, not just new creation). Dispatch reuses the real RedisStreamsEventBus — no
+// separate retry/backoff logic; WebhookDelivery records one row per delivery attempt.
+model Webhook {
+  id         String   @id @default(uuid())
+  companyId  String   @map("company_id")
+  url        String
+  eventTypes String[] @map("event_types")
+  secret     String
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  company    Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@index([companyId])
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id                 String                @id @default(uuid())
+  companyId          String                @map("company_id")
+  webhookId          String                @map("webhook_id")
+  eventType          String                @map("event_type")
+  attempt            Int                   @default(1)
+  status             WebhookDeliveryStatus @default(PENDING)
+  responseStatusCode Int?                  @map("response_status_code")
+  lastAttemptAt      DateTime?             @map("last_attempt_at")
+  createdAt          DateTime              @default(now()) @map("created_at")
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, webhookId])
+  @@map("webhook_deliveries")
+}
+
+// The plugin catalog itself (PLUGIN_DEFINITIONS) is a static in-code array mirroring the AI
+// Agent Framework's AGENT_DEFINITIONS registry — no real third-party plugin content exists yet
+// to justify a DB-backed Plugin/PluginVersion table. This is the only real per-tenant state:
+// which of the catalog's plugins a company has installed/activated. Soft-delete convention
+// (uninstalledAt), matching every other module in this codebase.
+model PluginInstall {
+  id            String    @id @default(uuid())
+  companyId     String    @map("company_id")
+  pluginKey     String    @map("plugin_key")
+  enabled       Boolean   @default(false)
+  installedAt   DateTime  @default(now()) @map("installed_at")
+  uninstalledAt DateTime? @map("uninstalled_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("plugin_installs")
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
 }

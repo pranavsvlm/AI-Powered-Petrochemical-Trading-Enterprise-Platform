@@ -46,6 +46,7 @@ import {
 import { ThreadListPage, ThreadDetailPage, ThreadCreatePage } from '@modules/communication/ui';
 import { AnalyticsDashboardPage, AnalyticsReportsPage } from '@modules/reports/ui';
 import { EmployeeListPage, EmployeeCreatePage, EmployeeDetailPage } from '@modules/hr/ui';
+import { ApiKeysPage, PluginsPage, WebhooksPage } from '@modules/extensibility/ui';
 import { Layout } from './Layout';
 import { LoginPage } from './pages/LoginPage';
 import { RequireAuth } from './RequireAuth';
@@ -111,6 +112,9 @@ export const router: ReturnType<typeof createHashRouter> = createHashRouter([
       { path: 'employees', element: <EmployeeListPage /> },
       { path: 'employees/new', element: <EmployeeCreatePage /> },
       { path: 'employees/:id', element: <EmployeeDetailPage /> },
+      { path: 'api-keys', element: <ApiKeysPage /> },
+      { path: 'webhooks', element: <WebhooksPage /> },
+      { path: 'plugins', element: <PluginsPage /> },
     ],
   },
 ]);

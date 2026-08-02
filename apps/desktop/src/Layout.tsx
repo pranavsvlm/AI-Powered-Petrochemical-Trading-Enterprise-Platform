@@ -25,6 +25,9 @@ const NAV_ITEMS = [
   { to: '/analytics', label: 'Analytics' },
   { to: '/analytics/reports', label: 'Analytics Reports' },
   { to: '/employees', label: 'Employees' },
+  { to: '/api-keys', label: 'API Keys' },
+  { to: '/webhooks', label: 'Webhooks' },
+  { to: '/plugins', label: 'Plugins' },
 ];
 
 export function Layout() {

@@ -1,8 +1,13 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, ValidationPipe } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { TenantContextMiddleware } from './common/tenant/tenant-context.middleware';
+import { RateLimitGuard } from './common/guards/rate-limit.guard';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { DeprecationInterceptor } from './common/interceptors/deprecation.interceptor';
+import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor';
 import { AuthModule } from './modules/auth/auth.module';
 import { CompanyModule } from './modules/company/company.module';
 import { UsersModule } from './modules/users/users.module';
@@ -24,6 +29,8 @@ import { TasksModule } from './modules/tasks/tasks.module';
 import { CommsModule } from './modules/comms/comms.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { HrModule } from './modules/hr/hr.module';
+import { ExtensibilityModule } from './modules/extensibility/extensibility.module';
+import { DeveloperModule } from './modules/developer/developer.module';
 
 @Module({
   imports: [
@@ -49,9 +56,25 @@ import { HrModule } from './modules/hr/hr.module';
     CommsModule,
     AnalyticsModule,
     HrModule,
+    ExtensibilityModule,
+    DeveloperModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: RateLimitGuard },
+    {
+      provide: APP_PIPE,
+      useValue: new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    },
+    { provide: APP_FILTER, useClass: GlobalExceptionFilter },
+    { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
